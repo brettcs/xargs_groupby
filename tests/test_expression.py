@@ -87,18 +87,18 @@ class UserExpressionTestCase(unittest.TestCase):
     def test_open_read_write_fails(self):
         self.test_open_write_fails('r+')
 
-    def test_not_callable(self):
+    def test_syntax_error(self, expr_s='lambda s:'):
         with self.assertRaises(ValueError):
-            xg.UserExpression('"test"')
+            xg.UserExpression(expr_s)
+
+    def test_not_callable(self):
+        self.test_syntax_error('"test"')
 
     def test_not_expression(self):
-        with self.assertRaises(ValueError):
-            xg.UserExpression('f = float')
+        self.test_syntax_error('f = float')
 
-    def test_syntax_error(self):
-        with self.assertRaises(ValueError):
-            xg.UserExpression('lambda s:')
+    def test_os_not_usable(self):
+        self.test_syntax_error('os.stat')
 
-    def test_names_limited(self):
-        with self.assertRaises(ValueError):
-            xg.UserExpression('sys.exit')
+    def test_other_modules_not_usable(self):
+        self.test_syntax_error('sys.exit')

@@ -27,7 +27,7 @@ class UserExpression(object):
     def __init__(self, expr_s):
         try:
             self.expr = eval(expr_s, self._VARS)
-        except SyntaxError as error:
+        except (AttributeError, SyntaxError) as error:
             raise ValueError(*error.args)
         except NameError as error:
             if error.args == ("name '_' is not defined",):
