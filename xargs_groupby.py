@@ -5,12 +5,22 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+import io
 import os
 import sys
 import types
+import warnings
 
 class UserExpression(object):
     _VARS = __builtins__.copy()
+
+    def _open(path, mode='r', *args, **kwargs):
+        if (not mode.startswith('r')) or ('+' in mode):
+            raise ValueError('invalid mode: {!r}'.format(mode))
+        return io.open(path, mode, *args, **kwargs)
+    _VARS['open'] = _open
+    del _open
+
     _VARS['os'] = types.ModuleType(str('os'))
     _VARS['os'].path = os.path
 
@@ -29,7 +39,12 @@ class UserExpression(object):
                              format(type(self.expr)))
 
     def __call__(self, arg):
-        value = self.expr(arg)
-        while callable(value):
-            value = value()
+        with warnings.catch_warnings():
+            try:
+                warnings.filterwarnings('ignore', category=ResourceWarning)
+            except NameError:
+                pass
+            value = self.expr(arg)
+            while callable(value):
+                value = value()
         return value
