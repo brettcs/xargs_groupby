@@ -15,7 +15,7 @@ class UserExpression(object):
     _VARS = __builtins__.copy()
 
     def _open(path, mode='r', *args, **kwargs):
-        if (not mode.startswith('r')) or ('+' in mode):
+        if not all(c in set('rbtU') for c in mode):
             raise ValueError('invalid mode: {!r}'.format(mode))
         return io.open(path, mode, *args, **kwargs)
     _VARS['open'] = _open
