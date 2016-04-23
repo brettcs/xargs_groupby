@@ -35,14 +35,6 @@ class UserExpressionTestCase(unittest.TestCase):
         expr = xg.UserExpression('_ * 2')
         self.assertEqual(expr('test'), 'testtest')
 
-    def test_callable_shortcut(self):
-        expr = xg.UserExpression('lambda s: s.upper')
-        self.assertEqual(expr('test'), 'TEST')
-
-    def test_all_shortcuts(self):
-        expr = xg.UserExpression('_.upper')
-        self.assertEqual(expr('test'), 'TEST')
-
     def test_builtin_usable(self):
         expr = xg.UserExpression('int')
         self.assertEqual(expr('019'), 19)
@@ -59,7 +51,7 @@ class UserExpressionTestCase(unittest.TestCase):
             yield testfile.name
 
     def test_open_usable(self):
-        expr = xg.UserExpression('open(_).readline')
+        expr = xg.UserExpression('open(_).readline()')
         with self.open_test_path() as testpath:
             self.assertEqual(expr(testpath), 'one\n')
 
@@ -68,13 +60,13 @@ class UserExpressionTestCase(unittest.TestCase):
             encoding = 'latin-1'
         else:
             encoding = 'utf-8'
-        expr = xg.UserExpression('open(_, encoding={!r}).readline'.
+        expr = xg.UserExpression('open(_, encoding={!r}).readline()'.
                                  format(encoding))
         with self.open_test_path('Ä\nË\n'.encode(encoding), 'wb') as testpath:
             self.assertEqual(expr(testpath), 'Ä\n')
 
     def test_open_write_fails(self, mode='w'):
-        expr = xg.UserExpression('open(_, {!r}).readline'.format(mode))
+        expr = xg.UserExpression('open(_, {!r}).readline()'.format(mode))
         with self.open_test_path() as testpath, self.assertRaises(ValueError):
             expr(testpath)
 

@@ -49,6 +49,4 @@ class UserExpression(object):
             except NameError:
                 pass
             value = self.expr(arg)
-            while callable(value):
-                value = value()
         return value
