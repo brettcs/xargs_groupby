@@ -35,6 +35,18 @@ class UserExpressionTestCase(unittest.TestCase):
         expr = xg.UserExpression('_ * 2')
         self.assertEqual(expr('test'), 'testtest')
 
+    def test_arbitrary_shortcut_name(self):
+        expr = xg.UserExpression('anything * 3')
+        self.assertEqual(expr('t'), 'ttt')
+
+    def test_arbitrary_shortcut_fails_inside_lambda(self):
+        with self.assertRaises(ValueError):
+            xg.UserExpression('lambda _: anything')
+
+    def test_two_arbitrary_names_fail(self):
+        with self.assertRaises(ValueError):
+            xg.UserExpression('_ * anything')
+
     def test_builtin_usable(self):
         expr = xg.UserExpression('int')
         self.assertEqual(expr('019'), 19)
@@ -92,18 +104,22 @@ class UserExpressionTestCase(unittest.TestCase):
     def test_os_not_usable(self):
         self.test_syntax_error('os.stat')
 
-    def test_other_modules_not_usable(self):
-        self.test_syntax_error('sys.exit')
+    def test_other_imported_module_not_usable(self):
+        self.test_syntax_error('warnings.resetwarnings')
+
+    def test_unimported_module_not_usable(self):
+        self.test_syntax_error('pickle.dumps')
 
     def test_exit_not_usable(self):
         self.test_syntax_error('exit(_)')
 
     def test_xg_contents_not_usable(self):
-        for name in dir(xg):
+        for name in ['NameChecker', 'UserExpression', 'name']:
+            expr_s = '{}(_)'.format(name)
             try:
-                xg.UserExpression(name)
+                xg.UserExpression(expr_s)
             except ValueError:
                 pass
             else:
                 self.fail("expression {!r} did not raise ValueError".
-                          format(name))
+                          format(expr_s))
