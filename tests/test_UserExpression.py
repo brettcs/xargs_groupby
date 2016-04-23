@@ -103,8 +103,11 @@ class UserExpressionTestCase(unittest.TestCase):
     def test_other_modules_not_usable(self):
         self.test_syntax_error('sys.exit')
 
+    def test_exit_not_usable(self):
+        self.test_syntax_error('exit(_)')
+
     def test_xg_contents_not_usable(self):
-        for name in set(dir(xg)).difference(__builtins__):
+        for name in dir(xg):
             try:
                 xg.UserExpression(name)
             except ValueError:

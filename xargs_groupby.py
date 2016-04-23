@@ -12,21 +12,25 @@ import types
 import warnings
 
 class UserExpression(object):
-    _VARS = __builtins__.copy()
+    _EVAL_VARS = {key: __builtins__[key] for key in __builtins__
+                  if not (key.startswith('_') or (key in set(
+                          ['eval', 'exec', 'exit', 'open', 'quit'])))}
+    _EVAL_VARS['__builtins__'] = _EVAL_VARS
 
     def _open(path, mode='r', *args, **kwargs):
         if not all(c in set('rbtU') for c in mode):
             raise ValueError('invalid mode: {!r}'.format(mode))
         return io.open(path, mode, *args, **kwargs)
-    _VARS['open'] = _open
-    del _open
+    _EVAL_VARS['open'] = _open
 
-    _VARS['os'] = types.ModuleType(str('os'))
-    _VARS['os'].path = os.path
+    _EVAL_VARS['os'] = types.ModuleType(os.__name__)
+    _EVAL_VARS['os'].path = os.path
+
+    del _open
 
     def __init__(self, expr_s):
         try:
-            self.expr = eval(expr_s, self._VARS)
+            self.expr = eval(expr_s, self._EVAL_VARS)
         except (AttributeError, SyntaxError) as error:
             raise ValueError(*error.args)
         except NameError as error:
