@@ -101,6 +101,17 @@ class UserExpressionTestCase(unittest.TestCase):
     def test_not_expression(self):
         self.test_syntax_error('f = float')
 
+    # This would be a nice feature to have, but it seems impossible to
+    # correctly introspect the arguments of built-in types.
+    # For example, try `inspect.getcallargs(int, 42)`.
+    @unittest.skip("arity checking seems unreliable")
+    def test_wrong_arity_zero(self):
+        self.test_syntax_error('lambda: 5')
+
+    @unittest.skip("arity checking seems unreliable")
+    def test_wrong_arity_two(self):
+        self.test_syntax_error('lambda a, b: a')
+
     def test_os_not_usable(self):
         self.test_syntax_error('os.stat')
 
