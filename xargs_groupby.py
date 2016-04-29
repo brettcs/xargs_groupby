@@ -6,6 +6,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import ast
+import collections
 import imp
 import io
 import os
@@ -110,3 +111,10 @@ class UserExpression(object):
             except NameError:
                 pass
             return self.func(arg)
+
+
+def group_args(args_iter, key_func):
+    groups = collections.defaultdict(list)
+    for argument in args_iter:
+        groups[key_func(argument)].append(argument)
+    return groups
