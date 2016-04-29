@@ -6,13 +6,12 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import contextlib
+import io
 import os.path
-import sys
-import tempfile
 import unittest
 
 import xargs_groupby as xg
+from . import mock
 
 class UserExpressionTestCase(unittest.TestCase):
     def test_simple_callable(self):
@@ -55,17 +54,18 @@ class UserExpressionTestCase(unittest.TestCase):
         expr = xg.UserExpression('os.path.basename')
         self.assertEqual(expr(os.path.join('dir', 'test')), 'test')
 
-    @contextlib.contextmanager
-    def open_test_path(self, body='one\ntwo\n', mode='w'):
-        with tempfile.NamedTemporaryFile(mode) as testfile:
-            testfile.write(body)
-            testfile.flush()
-            yield testfile.name
+    def patch_open(self, body='one\ntwo\n'):
+        return_file = io.StringIO(body)
+        io_mock = mock.Mock(name='io.open mock',
+                            spec_set=return_file,
+                            return_value=return_file)
+        return mock.patch('io.open', io_mock)
 
     def test_open_usable(self):
         expr = xg.UserExpression('open(_).readline()')
-        with self.open_test_path() as testpath:
-            self.assertEqual(expr(testpath), 'one\n')
+        with self.patch_open() as open_mock:
+            self.assertEqual(expr('path'), 'one\n')
+        open_mock.assert_called_once_with('path', 'r')
 
     def test_open_supports_encoding(self):
         if sys.getdefaultencoding() == 'utf-8':
@@ -74,13 +74,15 @@ class UserExpressionTestCase(unittest.TestCase):
             encoding = 'utf-8'
         expr = xg.UserExpression('open(_, encoding={!r}).readline()'.
                                  format(encoding))
-        with self.open_test_path('Ä\nË\n'.encode(encoding), 'wb') as testpath:
-            self.assertEqual(expr(testpath), 'Ä\n')
+        with self.patch_open('Ä\nË\n') as open_mock:
+            self.assertEqual(expr('path'), 'Ä\n')
+        open_mock.assert_called_once_with('path', 'r', encoding=encoding)
 
     def test_open_write_fails(self, mode='w'):
         expr = xg.UserExpression('open(_, {!r}).readline()'.format(mode))
-        with self.open_test_path() as testpath, self.assertRaises(ValueError):
-            expr(testpath)
+        with self.patch_open() as open_mock, self.assertRaises(ValueError):
+            expr('path')
+        self.assertEqual(open_mock.call_count, 0)
 
     def test_open_append_fails(self):
         self.test_open_write_fails('a')
