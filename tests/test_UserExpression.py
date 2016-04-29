@@ -11,7 +11,7 @@ import os.path
 import unittest
 
 import xargs_groupby as xg
-from . import mock
+from . import mock, FOREIGN_ENCODING
 
 class UserExpressionTestCase(unittest.TestCase):
     def test_simple_callable(self):
@@ -54,8 +54,8 @@ class UserExpressionTestCase(unittest.TestCase):
         expr = xg.UserExpression('os.path.basename')
         self.assertEqual(expr(os.path.join('dir', 'test')), 'test')
 
-    def patch_open(self, body='one\ntwo\n'):
-        return_file = io.StringIO(body)
+    def patch_open(self, body='one\ntwo\n', return_class=io.StringIO):
+        return_file = return_class(body)
         io_mock = mock.Mock(name='io.open mock',
                             spec_set=return_file,
                             return_value=return_file)
@@ -68,15 +68,19 @@ class UserExpressionTestCase(unittest.TestCase):
         open_mock.assert_called_once_with('path', 'r')
 
     def test_open_supports_encoding(self):
-        if sys.getdefaultencoding() == 'utf-8':
-            encoding = 'latin-1'
-        else:
-            encoding = 'utf-8'
         expr = xg.UserExpression('open(_, encoding={!r}).readline()'.
-                                 format(encoding))
+                                 format(FOREIGN_ENCODING))
         with self.patch_open('Ä\nË\n') as open_mock:
             self.assertEqual(expr('path'), 'Ä\n')
-        open_mock.assert_called_once_with('path', 'r', encoding=encoding)
+        open_mock.assert_called_once_with('path', 'r',
+                                          encoding=FOREIGN_ENCODING)
+
+    def test_open_supports_bytes(self):
+        expr = xg.UserExpression('open(_, "rb").readline()')
+        lines = [s.encode(FOREIGN_ENCODING) for s in ['Ö\n', 'Ü\n']]
+        with self.patch_open(bytes().join(lines), io.BytesIO) as open_mock:
+            self.assertEqual(expr('path'), lines[0])
+        open_mock.assert_called_once_with('path', 'rb')
 
     def test_open_write_fails(self, mode='w'):
         expr = xg.UserExpression('open(_, {!r}).readline()'.format(mode))
