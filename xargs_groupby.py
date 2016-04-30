@@ -9,6 +9,7 @@ import ast
 import collections
 import imp
 import io
+import itertools
 import os
 import sys
 import types
@@ -119,13 +120,19 @@ class UserExpression(object):
 
 
 class XargsCommand(object):
-    def __init__(self, base):
-        self.base = list(base)
+    def __init__(self, xargs_base, subcommand):
+        self.xargs_base = list(xargs_base)
+        self.subcommand = list(subcommand)
         self.switches = {'--max-procs': '1'}
 
+    def _iter_switches(self):
+        for key in self.switches:
+            yield key
+            yield self.switches[key]
+
     def command(self):
-        return sum(([key, self.switches[key]] for key in self.switches),
-                   self.base[:])
+        return list(itertools.chain(
+            self.xargs_base, self._iter_switches(), self.subcommand))
 
     def set_parallel(self, cores_count, groups_count):
         if groups_count > 0:

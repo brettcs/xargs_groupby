@@ -12,13 +12,17 @@ import xargs_groupby as xg
 
 class XargsCommandTestCase(unittest.TestCase):
     def setUp(self):
-        self.xargs = xg.XargsCommand(['xargs', '-0'])
+        self.subcommand = 'cat'
+        self.xargs = xg.XargsCommand(['xargs', '-0'], [self.subcommand, '-A'])
 
     def test_base_command_copies(self):
-        base = ['xargs', '-0']
-        xargs = xg.XargsCommand(base)
-        base.pop()
+        xargs_base = ['xargs', '-0']
+        subcmd_base = ['cat', '-A']
+        xargs = xg.XargsCommand(xargs_base, subcmd_base)
+        xargs_base.pop()
+        subcmd_base.pop()
         self.assertEqual(xargs.command()[:2], ['xargs', '-0'])
+        self.assertEqual(xargs.command()[-2:], ['cat', '-A'])
 
     def test_command_method_new(self):
         self.assertIsNot(self.xargs.command(), self.xargs.command())
@@ -29,6 +33,9 @@ class XargsCommandTestCase(unittest.TestCase):
         except ValueError:
             self.fail("{!r} not found in {!r}".format(argument, command))
 
+    def xargs_part(self, command):
+        return command[:self.argument_index(command, self.subcommand)]
+
     def assertArgumentAt(self, command, index, value, fail_reason=None):
         try:
             self.assertEqual(command[index], value)
@@ -38,6 +45,7 @@ class XargsCommandTestCase(unittest.TestCase):
             self.fail("{}: {!r}".format(fail_reason, command))
 
     def assertSwitchSet(self, command, switch_name, value):
+        command = self.xargs_part(command)
         index = self.argument_index(command, switch_name)
         self.assertArgumentAt(command, index + 1, value,
                               "no value for switch {!r}".format(switch_name))
