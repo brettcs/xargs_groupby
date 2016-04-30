@@ -113,6 +113,14 @@ class UserExpression(object):
             return self.func(arg)
 
 
+class XargsCommand(object):
+    def __init__(self, base):
+        self.base = list(base)
+
+    def command(self):
+        return self.base[:]
+
+
 def group_args(args_iter, key_func):
     groups = collections.defaultdict(list)
     for argument in args_iter:
