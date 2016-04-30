@@ -120,9 +120,10 @@ class UserExpression(object):
 
 
 class XargsCommand(object):
-    def __init__(self, xargs_base, subcommand):
+    def __init__(self, xargs_base, subcommand, key_string=None):
         self.xargs_base = list(xargs_base)
         self.subcommand = list(subcommand)
+        self.key_string = key_string
         self.switches = {'--max-procs': '1'}
 
     def _iter_switches(self):
@@ -130,9 +131,17 @@ class XargsCommand(object):
             yield key
             yield self.switches[key]
 
-    def command(self):
-        return list(itertools.chain(
-            self.xargs_base, self._iter_switches(), self.subcommand))
+    def _iter_subcommand(self, group_key):
+        if self.key_string is None:
+            return iter(self.subcommand)
+        else:
+            return (arg.replace(self.key_string, group_key)
+                    for arg in self.subcommand)
+
+    def command(self, group_key):
+        return list(itertools.chain(self.xargs_base,
+                                    self._iter_switches(),
+                                    self._iter_subcommand(group_key)))
 
     def set_parallel(self, cores_count, groups_count):
         if groups_count > 0:
