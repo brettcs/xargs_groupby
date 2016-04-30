@@ -14,6 +14,11 @@ import sys
 import types
 import warnings
 
+try:
+    unicode
+except NameError:
+    unicode = str
+
 class NameChecker(ast.NodeVisitor):
     def __init__(self, names):
         self.names = names
@@ -116,9 +121,16 @@ class UserExpression(object):
 class XargsCommand(object):
     def __init__(self, base):
         self.base = list(base)
+        self.switches = {'--max-procs': '1'}
 
     def command(self):
-        return self.base[:]
+        return sum(([key, self.switches[key]] for key in self.switches),
+                   self.base[:])
+
+    def set_parallel(self, cores_count, groups_count):
+        if groups_count > 0:
+            max_procs = max(1, cores_count // groups_count)
+            self.switches['--max-procs'] = unicode(max_procs)
 
 
 def group_args(args_iter, key_func):
