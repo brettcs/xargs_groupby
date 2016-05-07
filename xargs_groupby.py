@@ -10,7 +10,10 @@ import collections
 import imp
 import io
 import itertools
+import locale
+import operator
 import os
+import subprocess
 import sys
 import types
 import warnings
@@ -19,6 +22,8 @@ try:
     unicode
 except NameError:
     unicode = str
+
+ENCODING = locale.getpreferredencoding()
 
 class NameChecker(ast.NodeVisitor):
     def __init__(self, names):
@@ -152,6 +157,56 @@ class XargsCommand(object):
         if groups_count > 0:
             max_procs = max(1, cores_count // groups_count)
             self.switches['--max-procs'] = unicode(max_procs)
+
+
+class ProcessWriter(object):
+    Popen = subprocess.Popen
+
+    def __init__(self, cmd, input_seq, encoding=ENCODING):
+        self.proc = self.Popen(cmd, stdin=subprocess.PIPE)
+        self.input_seq = iter(input_seq)
+        self.encoding = encoding
+        self.returncode = None
+        self.write_error = None
+        self.write_buffer = bytearray()
+        if not self._fill_buffer():
+            self.proc.stdin.close()
+
+    def _fill_buffer(self):
+        try:
+            next_s = next(self.input_seq) + '\0'
+        except StopIteration:
+            return False
+        else:
+            self.write_buffer.extend(next_s.encode(self.encoding))
+            return True
+
+    def write(self, bytecount):
+        while (len(self.write_buffer) < bytecount) and self._fill_buffer():
+            # _fill_buffer made progress toward the goal if it returned True.
+            pass
+        # We expect that the amount of buffer overshoot is small relative to
+        # bytecount in the general case, so this should be a reasonably
+        # efficient implementation.
+        next_buffer = self.write_buffer[bytecount:]
+        del self.write_buffer[bytecount:]
+        try:
+            self.proc.stdin.write(self.write_buffer)
+        except EnvironmentError as error:
+            self.write_error = error
+        self.write_buffer = next_buffer
+        if self.write_error or not (self.write_buffer or self._fill_buffer()):
+            self.proc.stdin.close()
+
+    def done_writing(self):
+        return self.proc.stdin.closed
+
+    def poll(self):
+        self.returncode = self.proc.poll()
+        return self.returncode
+
+    def success(self):
+        return (self.write_error is None) and (self.poll() == 0)
 
 
 def group_args(args_iter, key_func):
