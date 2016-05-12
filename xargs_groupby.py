@@ -209,6 +209,26 @@ class ProcessWriter(object):
         return (self.write_error is None) and (self.poll() == 0)
 
 
+class ProcessPipeline(object):
+    ProcessWriter = ProcessWriter
+
+    def __init__(self, proc_sources, encoding=ENCODING):
+        self.proc_sources = iter(proc_sources)
+        self.encoding = encoding
+        self._success = None
+
+    def __iter__(self):
+        for cmd, input_seq in self.proc_sources:
+            proc = self.ProcessWriter(cmd, input_seq, self.encoding)
+            yield proc
+            self._success = proc.success()
+            if not self._success:
+                break
+
+    def success(self):
+        return self._success
+
+
 def group_args(args_iter, key_func):
     groups = collections.defaultdict(list)
     for argument in args_iter:
