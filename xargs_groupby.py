@@ -219,9 +219,9 @@ class ProcessPipeline(object):
 
     def __iter__(self):
         for cmd, input_seq in self.proc_sources:
-            proc = self.ProcessWriter(cmd, input_seq, self.encoding)
-            yield proc
-            self._success = proc.success()
+            self.last_proc = self.ProcessWriter(cmd, input_seq, self.encoding)
+            yield self.last_proc
+            self._success = self.last_proc.success()
             if not self._success:
                 break
 

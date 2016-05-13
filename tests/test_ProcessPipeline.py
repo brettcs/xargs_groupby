@@ -36,7 +36,7 @@ class ProcessPipelineTestCase(unittest.TestCase):
 
     def assertPipeline(self, actual_pipeline, expected_pipeline):
         pipeline_iter = iter(actual_pipeline)
-        for expected_args in expected_pipeline:
+        for index, expected_args in enumerate(expected_pipeline):
             try:
                 next(pipeline_iter)
             except StopIteration:
@@ -44,6 +44,7 @@ class ProcessPipelineTestCase(unittest.TestCase):
             actual_args = xg.ProcessPipeline.ProcessWriter.call_args[0]
             self.assertEqual(actual_args[0], expected_args[0])
             self.assertIs(actual_args[1], expected_args[1])
+            self.assertIs(actual_pipeline.last_proc, self.procs[index])
         self.assertIs(next(pipeline_iter, self.STOP_SENTINEL), self.STOP_SENTINEL)
 
     def test_one_step_pipeline(self):
