@@ -80,3 +80,11 @@ class ProcessPipelineTestCase(unittest.TestCase):
         pipeline = xg.ProcessPipeline(raw_pipeline)
         self.assertPipeline(pipeline, raw_pipeline)
         self.assertFalse(pipeline.success())
+
+    def test_pipeline_stops_after_unsuccessful_proc(self):
+        self.procs.append(FakeProcessWriter(0, False))
+        self.add_procs([0])
+        raw_pipeline = [(['i'], iter([])), (['j'], iter([]))]
+        pipeline = xg.ProcessPipeline(raw_pipeline)
+        self.assertPipeline(pipeline, raw_pipeline[:1])
+        self.assertFalse(pipeline.success())
