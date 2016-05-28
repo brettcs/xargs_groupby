@@ -10,18 +10,7 @@ import unittest
 
 import xargs_groupby as xg
 from . import mock
-
-class FakeProcessWriter(object):
-    def __init__(self, returncode, success=None):
-        self.returncode = returncode
-        self._success = (returncode == 0) if (success is None) else success
-
-    def poll(self):
-        return self.returncode
-
-    def success(self):
-        return self._success
-
+from .mocks import FakeProcessWriter
 
 class ProcessPipelineTestCase(unittest.TestCase):
     STOP_SENTINEL = object()
