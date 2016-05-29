@@ -66,6 +66,19 @@ class MultiProcessWriterTestCase(unittest.TestCase):
         writer.write_ready()
         self.assertEqual(self.poller.poll.call_count, 1)
 
+    def test_write_ready_passes_timeout(self):
+        proc = mocks.FakeProcessWriter(0, need_writes=1)
+        writer = xg.MultiProcessWriter()
+        writer.add(proc)
+        writer.write_ready(5)
+        self.poller.poll.assert_called_with(5)
+        self.assertIsNone(proc.success())
+
+    def test_no_timeout_poll_with_no_fds(self):
+        writer = xg.MultiProcessWriter()
+        writer.write_ready(3)
+        self.assertFalse(self.poller.poll.called)
+
     def assertDoneProcs(self, writer, expect_procs):
         done_procs = set(writer.done_procs())
         self.assertEqual(len(done_procs), len(expect_procs))

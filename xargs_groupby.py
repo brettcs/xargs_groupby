@@ -230,10 +230,10 @@ class MultiProcessWriter(object):
             self.poller.register(fd, select.POLLOUT)
             self.procs[fd] = proc_writer
 
-    def write_ready(self):
+    def write_ready(self, timeout=None):
         if not self.procs:
             return
-        for fd, _ in self.poller.poll():
+        for fd, _ in self.poller.poll(timeout):
             proc = self.procs[fd]
             proc.write(self.PIPE_BUF)
             if proc.done_writing():
