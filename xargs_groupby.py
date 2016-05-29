@@ -279,6 +279,69 @@ class ProcessPipeline(object):
         return self._success
 
 
+class PipelineRunner(object):
+    MultiProcessWriter = MultiProcessWriter
+
+    def __init__(self, max_procs=1):
+        self.multi_writer = self.MultiProcessWriter()
+        self.max_procs = max_procs
+        self._run_count = 0
+        self._failures_count = 0
+
+    def run(self, pipelines):
+        pipelines_to_run = iter(pipelines)
+        running_pipelines = set()
+        while True:
+            self._start_pipelines(pipelines_to_run, running_pipelines)
+            if not running_pipelines:
+                break
+            self._write_ready(running_pipelines)
+            self._advance_pipelines(running_pipelines)
+
+    def _start_pipelines(self, pipelines_to_run, running_pipelines):
+        while len(running_pipelines) < self.max_procs:
+            try:
+                next_pipeline = next(pipelines_to_run)
+            except StopIteration:
+                break
+            else:
+                running_pipelines.add(next_pipeline)
+                self.multi_writer.add(next_pipeline.next_proc())
+                self._run_count += 1
+
+    def _write_ready(self, running_pipelines):
+        writing_count = self.multi_writer.writing_count()
+        if writing_count == 0:
+            return
+        elif writing_count == len(running_pipelines):
+            timeout = None
+        else:
+            timeout = 0.1
+        self.multi_writer.write_ready(timeout)
+
+    def _advance_pipelines(self, running_pipelines):
+        done_pipelines = set()
+        for pipeline in running_pipelines:
+            proc_success = pipeline.last_proc.poll()
+            if proc_success is None:
+                continue
+            try:
+                new_proc = pipeline.next_proc()
+            except StopIteration:
+                if not pipeline.success():
+                    self._failures_count += 1
+                done_pipelines.add(pipeline)
+            else:
+                self.multi_writer.add(new_proc)
+        running_pipelines.difference_update(done_pipelines)
+
+    def run_count(self):
+        return self._run_count
+
+    def failures_count(self):
+        return self._failures_count
+
+
 def group_args(args_iter, key_func):
     groups = collections.defaultdict(list)
     for argument in args_iter:
