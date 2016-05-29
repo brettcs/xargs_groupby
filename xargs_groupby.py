@@ -13,6 +13,7 @@ import itertools
 import locale
 import operator
 import os
+import select
 import subprocess
 import sys
 import types
@@ -207,6 +208,43 @@ class ProcessWriter(object):
 
     def success(self):
         return (self.write_error is None) and (self.poll() == 0)
+
+    def fileno(self):
+        return self.proc.stdin.fileno()
+
+
+class MultiProcessWriter(object):
+    Poll = select.poll
+    PIPE_BUF = select.PIPE_BUF
+
+    def __init__(self):
+        self.procs = {}
+        self._done_procs = []
+        self.poller = self.Poll()
+
+    def add(self, proc_writer):
+        if proc_writer.done_writing():
+            self._done_procs.append(proc_writer)
+        else:
+            fd = proc_writer.fileno()
+            self.poller.register(fd, select.POLLOUT)
+            self.procs[fd] = proc_writer
+
+    def write_ready(self):
+        if not self.procs:
+            return
+        for fd, _ in self.poller.poll():
+            proc = self.procs[fd]
+            proc.write(self.PIPE_BUF)
+            if proc.done_writing():
+                self.poller.unregister(fd)
+                self._done_procs.append(proc)
+                del self.procs[fd]
+
+    def done_procs(self):
+        done_this_round = self._done_procs
+        self._done_procs = []
+        return iter(done_this_round)
 
 
 class ProcessPipeline(object):
