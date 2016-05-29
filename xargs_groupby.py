@@ -219,13 +219,10 @@ class MultiProcessWriter(object):
 
     def __init__(self):
         self.procs = {}
-        self._done_procs = []
         self.poller = self.Poll()
 
     def add(self, proc_writer):
-        if proc_writer.done_writing():
-            self._done_procs.append(proc_writer)
-        else:
+        if not proc_writer.done_writing():
             fd = proc_writer.fileno()
             self.poller.register(fd, select.POLLOUT)
             self.procs[fd] = proc_writer
@@ -238,16 +235,10 @@ class MultiProcessWriter(object):
             proc.write(self.PIPE_BUF)
             if proc.done_writing():
                 self.poller.unregister(fd)
-                self._done_procs.append(proc)
                 del self.procs[fd]
 
     def writing_count(self):
         return len(self.procs)
-
-    def done_procs(self):
-        done_this_round = self._done_procs
-        self._done_procs = []
-        return iter(done_this_round)
 
 
 class ProcessPipeline(object):
