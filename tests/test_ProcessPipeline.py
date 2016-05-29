@@ -24,17 +24,18 @@ class ProcessPipelineTestCase(unittest.TestCase):
         self.procs.extend(FakeProcessWriter(status) for status in returncodes)
 
     def assertPipeline(self, actual_pipeline, expected_pipeline):
-        pipeline_iter = iter(actual_pipeline)
         for index, expected_args in enumerate(expected_pipeline):
             try:
-                next(pipeline_iter)
+                proc = actual_pipeline.next_proc()
             except StopIteration:
                 self.fail("actual pipeline produced no proc for {!r}".format(expected_args))
             actual_args = xg.ProcessPipeline.ProcessWriter.call_args[0]
             self.assertEqual(actual_args[0], expected_args[0])
             self.assertIs(actual_args[1], expected_args[1])
-            self.assertIs(actual_pipeline.last_proc, self.procs[index])
-        self.assertIs(next(pipeline_iter, self.STOP_SENTINEL), self.STOP_SENTINEL)
+            self.assertIs(proc, self.procs[index])
+            self.assertIs(actual_pipeline.last_proc, proc)
+        with self.assertRaises(StopIteration):
+            actual_pipeline.next_proc()
 
     def test_one_step_pipeline(self):
         self.add_procs([0])
@@ -83,7 +84,6 @@ class ProcessPipelineTestCase(unittest.TestCase):
         self.add_procs([0, 0])
         raw_pipeline = [(['k'], iter([])), (['l'], iter([]))]
         pipeline = xg.ProcessPipeline(raw_pipeline)
-        pipeline_iter = iter(pipeline)
-        next(pipeline_iter)
-        next(pipeline_iter)
+        pipeline.next_proc()
+        pipeline.next_proc()
         self.assertIsNone(pipeline.success())

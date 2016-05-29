@@ -256,18 +256,24 @@ class ProcessPipeline(object):
     def __init__(self, proc_sources, encoding=ENCODING):
         self.proc_sources = iter(proc_sources)
         self.encoding = encoding
+        self.last_proc = None
         self._success = None
 
-    def __iter__(self):
-        for cmd, input_seq in self.proc_sources:
-            self.last_proc = self.ProcessWriter(cmd, input_seq, self.encoding)
-            yield self.last_proc
+    def next_proc(self):
+        if self.success() is not None:
+            raise StopIteration
+        if self.last_proc is not None:
             proc_success = self.last_proc.success()
             if not proc_success:
                 self._success = proc_success
-                break
-        else:
+                raise StopIteration
+        try:
+            cmd, input_seq = next(self.proc_sources)
+        except StopIteration:
             self._success = True
+            raise
+        self.last_proc = self.ProcessWriter(cmd, input_seq, self.encoding)
+        return self.last_proc
 
     def success(self):
         return self._success
