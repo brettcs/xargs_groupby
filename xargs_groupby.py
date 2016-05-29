@@ -259,9 +259,12 @@ class ProcessPipeline(object):
         for cmd, input_seq in self.proc_sources:
             self.last_proc = self.ProcessWriter(cmd, input_seq, self.encoding)
             yield self.last_proc
-            self._success = self.last_proc.success()
-            if not self._success:
+            proc_success = self.last_proc.success()
+            if not proc_success:
+                self._success = proc_success
                 break
+        else:
+            self._success = True
 
     def success(self):
         return self._success

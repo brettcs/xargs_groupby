@@ -78,3 +78,12 @@ class ProcessPipelineTestCase(unittest.TestCase):
         pipeline = xg.ProcessPipeline(raw_pipeline)
         self.assertPipeline(pipeline, raw_pipeline[:1])
         self.assertFalse(pipeline.success())
+
+    def test_success_not_set_while_pipeline_running(self):
+        self.add_procs([0, 0])
+        raw_pipeline = [(['k'], iter([])), (['l'], iter([]))]
+        pipeline = xg.ProcessPipeline(raw_pipeline)
+        pipeline_iter = iter(pipeline)
+        next(pipeline_iter)
+        next(pipeline_iter)
+        self.assertIsNone(pipeline.success())
