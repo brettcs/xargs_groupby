@@ -301,14 +301,15 @@ class PipelineRunner(object):
                 self._run_count += 1
 
     def _write_ready(self, running_pipelines):
+        running_count = len(running_pipelines)
         writing_count = self.multi_writer.writing_count()
         if writing_count == 0:
             return
-        elif writing_count == len(running_pipelines):
-            timeout = None
+        elif writing_count < running_count:
+            self.multi_writer.write_ready(0.1)
         else:
-            timeout = 0.1
-        self.multi_writer.write_ready(timeout)
+            while self.multi_writer.writing_count() >= running_count:
+                self.multi_writer.write_ready()
 
     def _advance_pipelines(self, running_pipelines):
         done_pipelines = set()

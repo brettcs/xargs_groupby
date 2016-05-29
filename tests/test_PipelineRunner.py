@@ -31,7 +31,7 @@ class PipelineRunnerTestCase(unittest.TestCase):
 
     def count_poll_timeouts(self):
         return sum(1 for call in self.writer_mock.write_ready.call_args_list
-                   if call[0][0] or call[1].get('timeout'))
+                   if any(call[0][:1]) or call[1].get('timeout'))
 
     def count_successful_pipelines(self):
         return sum(1 for p in self.pipelines if p.success())
