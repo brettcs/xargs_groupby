@@ -79,6 +79,42 @@ class MultiProcessWriterTestCase(unittest.TestCase):
         writer.write_ready(3)
         self.assertFalse(self.poller.poll.called)
 
+    def test_writing_count_zero(self):
+        writer = xg.MultiProcessWriter()
+        self.assertEqual(0, writer.writing_count())
+
+    def test_writing_count_when_no_writes_needed(self):
+        proc = mocks.FakeProcessWriter(0, need_writes=0)
+        writer = xg.MultiProcessWriter()
+        writer.add(proc)
+        self.assertEqual(0, writer.writing_count())
+
+    def test_writing_count_one(self):
+        proc = mocks.FakeProcessWriter(0, need_writes=1)
+        writer = xg.MultiProcessWriter()
+        writer.add(proc)
+        self.assertEqual(1, writer.writing_count())
+
+    def test_writing_count_after_done_writing(self):
+        proc = mocks.FakeProcessWriter(0, need_writes=1)
+        writer = xg.MultiProcessWriter()
+        writer.add(proc)
+        writer.write_ready()
+        self.assertEqual(0, writer.writing_count())
+
+    def test_writing_count_two(self):
+        writer = xg.MultiProcessWriter()
+        for n in range(1, 3):
+            writer.add(mocks.FakeProcessWriter(0, need_writes=n))
+        self.assertEqual(2, writer.writing_count())
+
+    def test_writing_count_after_done_writing_one(self):
+        writer = xg.MultiProcessWriter()
+        for n in range(1, 3):
+            writer.add(mocks.FakeProcessWriter(0, need_writes=n))
+        writer.write_ready()
+        self.assertEqual(1, writer.writing_count())
+
     def assertDoneProcs(self, writer, expect_procs):
         done_procs = set(writer.done_procs())
         self.assertEqual(len(done_procs), len(expect_procs))

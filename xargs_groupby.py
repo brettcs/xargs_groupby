@@ -241,6 +241,9 @@ class MultiProcessWriter(object):
                 self._done_procs.append(proc)
                 del self.procs[fd]
 
+    def writing_count(self):
+        return len(self.procs)
+
     def done_procs(self):
         done_this_round = self._done_procs
         self._done_procs = []
