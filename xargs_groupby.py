@@ -32,6 +32,7 @@ import operator
 import os
 import re
 import select
+import shlex
 import subprocess
 import sys
 import types
@@ -44,6 +45,69 @@ except NameError:
 
 ENCODING = locale.getpreferredencoding()
 PY_MAJVER = sys.version_info.major
+
+class InputShlexer(object):
+    SHLEX_CODING = 'iso-8859-1'
+
+    class _WordChars(object):
+        def __init__(self, exclude_chars):
+            self.exclude_chars = frozenset(exclude_chars)
+
+        def __contains__(self, char):
+            return char not in self.exclude_chars
+
+
+    def __init__(self, in_stream, eof_str):
+        self.in_stream = in_stream
+        self.eof_line = None if (eof_str is None) else (eof_str + '\n')
+        self.shlex = shlex.shlex('', getattr(in_stream, 'name', None), posix=True)
+        self.shlex.commenters = ''
+        self.shlex.whitespace_split = True
+        exclude_chars = [getattr(self.shlex, name) for name in
+                         ['whitespace', 'quotes', 'escape']]
+        chars_type = type(exclude_chars[0])
+        exclude_chars = chars_type().join(exclude_chars)
+        if not issubclass(chars_type, unicode):
+            exclude_chars = exclude_chars.decode(self.SHLEX_CODING)
+        self.shlex.wordchars = self._WordChars(exclude_chars)
+
+    @staticmethod
+    def _is_backslash(char):
+        return char == '\\'
+
+    def _line_tokens(self, line):
+        trailing_backslash_count = sum(
+            1 for _ in itertools.takewhile(self._is_backslash, reversed(line)))
+        if trailing_backslash_count % 2:
+            line = line[:-1]
+        with io.StringIO(line) as line_stream:
+            self.shlex.state = ' '
+            self.shlex.token = ''
+            self.shlex.instream = line_stream
+            tokens = iter(self.shlex)
+            while True:
+                try:
+                    yield next(tokens)
+                except (StopIteration, ValueError):
+                    break
+
+    def __iter__(self):
+        pre_lines = []
+        for line in self.in_stream:
+            if line.endswith('\\\n'):
+                pre_lines.append(line)
+                continue
+            elif pre_lines:
+                pre_lines.append(line)
+                line = ''.join(pre_lines)
+                pre_lines = []
+            if line == self.eof_line:
+                break
+            for token in self._line_tokens(line):
+                yield token
+        for token in self._line_tokens(''.join(pre_lines)):
+            yield token
+
 
 class NameChecker(ast.NodeVisitor):
     def __init__(self, names):
