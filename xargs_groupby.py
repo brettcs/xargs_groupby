@@ -50,7 +50,8 @@ class NameChecker(ast.NodeVisitor):
 class UserExpression(object):
     SOURCE = '<user expression>'
 
-    _EVAL_VARS = {key: __builtins__[key] for key in __builtins__
+    _builtins = __builtins__ if isinstance(__builtins__, dict) else vars(__builtins__)
+    _EVAL_VARS = {key: value for key, value in _builtins.items()
                   if not (key.startswith('_') or (key in set(
                           ['eval', 'exec', 'exit', 'open', 'quit'])))}
     _EVAL_VARS['__builtins__'] = _EVAL_VARS
