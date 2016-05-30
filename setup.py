@@ -8,10 +8,11 @@ from __future__ import unicode_literals
 import sys
 
 import setuptools
+import xargs_groupby
 
 setup = {
     'name': 'xargs_groupby',
-    'version': '0.1',
+    'version': xargs_groupby.VERSION,
     'py_modules': ['xargs_groupby'],
     'test_suite': 'tests',
 }
