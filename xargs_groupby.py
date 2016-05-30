@@ -1,10 +1,27 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+VERSION = "0.1.dev1"
+COPYRIGHT = "Copyright © 2016 Brett Smith <brettcsmith@brettcsmith.org>"
+LICENSE = """This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>."""
+
+import argparse
 import ast
 import collections
 import imp
@@ -13,6 +30,7 @@ import itertools
 import locale
 import operator
 import os
+import re
 import select
 import subprocess
 import sys
@@ -25,6 +43,7 @@ except NameError:
     unicode = str
 
 ENCODING = locale.getpreferredencoding()
+PY_MAJVER = sys.version_info.major
 
 class NameChecker(ast.NodeVisitor):
     def __init__(self, names):
@@ -333,6 +352,93 @@ class PipelineRunner(object):
 
     def failures_count(self):
         return self._failures_count
+
+
+class VersionAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        print("{} {}".format(parser.prog, VERSION), COPYRIGHT, LICENSE,
+              sep="\n\n")
+        parser.exit(0)
+
+
+class ArgumentParser(argparse.ArgumentParser):
+    ARGV_ENCODING = ENCODING
+
+    def __init__(self):
+        self.xargs_parser = argparse.ArgumentParser(prog='xargs', add_help=False)
+        xargs_opts = self.xargs_parser.add_argument_group(
+            "xargs options", "Switches passed directly to xargs calls")
+        xargs_opts.add_argument(
+            '--exit', '-x', action='store_true',
+            help="Exit if a command exceeds --max-chars")
+        xargs_opts.add_argument(
+            '-I', '--replace', '-i', dest='I', metavar='STR',
+            help="Replace this string in the command with arguments")
+        xargs_opts.add_argument(
+            '--interactive', '-p', action='store_true',
+            help="Prompt user before running commands")
+        xargs_opts.add_argument(
+            '--max-args', '-n', metavar='NUM',
+            help="Maximum number of arguments per command line")
+        xargs_opts.add_argument(
+            '--max-chars', '-s', metavar='NUM',
+            help="Maximum number of characters per command line")
+        xargs_opts.add_argument(
+            '--verbose', '-t', action='store_true',
+            help="Write commands to stderr before executing")
+
+        super(ArgumentParser, self).__init__(
+            prog='xargs_groupby',
+            parents=[self.xargs_parser],
+        )
+        self.add_argument(
+            '--version', action=VersionAction, nargs=0,
+            help="Display version and license information")
+        self.add_argument(
+            '--arg-file', '-a', metavar='FILE',
+            help="Read arguments from file instead of stdin")
+        self.add_argument(
+            '--delimiter', '-d', metavar='CHAR',
+            help="Separator character for arguments")
+        self.add_argument(
+            '--encoding', default=ENCODING,
+            help="Encoding for all I/O")
+        self.add_argument(
+            '--eof-str', '--eof', '-E', metavar='EOF',
+            help="Stop reading input at a line with this string")
+        self.add_argument(
+            '--null', '-0',
+            dest='delimiter', action='store_const', const=r'\0',
+            help="Use the null character as the delimiter")
+        self.add_argument(
+            '--preexec', '--pre', nargs='+', metavar='COMMAND',
+            help="Command to run per group before the main command, terminated with --")
+        self.add_argument(
+            'group_code',
+            help="Python expression or callable to group arguments")
+        self.add_argument(
+            'command', nargs='+', metavar='command',
+            help="Command to run per group, with the grouped arguments")
+
+    def _delimiter_byte(self, delimiter_s, encoding):
+        if re.match(r'^\\[0abfnrtv]$', delimiter_s):
+            delimiter_s = eval('u"{}"'.format(delimiter_s), {})
+        try:
+            delimiter_b = delimiter_s.encode(encoding)
+        except UnicodeEncodeError:
+            self.error("delimiter {!r} can't be encoded to {}".format(delimiter_s, args.encoding))
+        if len(delimiter_b) > 1:
+            self.error("delimiter {!r} spans multiple bytes".format(delimiter_s))
+        return delimiter_b
+
+    def parse_args(self, arglist=None):
+        if PY_MAJVER < 3:
+            arglist = [arg.decode(self.ARGV_ENCODING) for arg in arglist]
+        xargs_opts, arglist = self.xargs_parser.parse_known_args(arglist)
+        args = super(ArgumentParser, self).parse_args(arglist)
+        if args.delimiter is not None:
+            args.delimiter = self._delimiter_byte(args.delimiter, args.encoding)
+        return args, xargs_opts
 
 
 def group_args(args_iter, key_func):
