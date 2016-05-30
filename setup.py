@@ -12,6 +12,7 @@ import setuptools
 setup = {
     'name': 'xargs_groupby',
     'version': '0.1',
+    'py_modules': ['xargs_groupby'],
     'test_suite': 'tests',
 }
 
