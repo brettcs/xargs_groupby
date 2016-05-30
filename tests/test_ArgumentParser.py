@@ -69,6 +69,17 @@ class ArgumentParserTestCase(unittest.TestCase):
         args, _ = xg.ArgumentParser().parse_args(arglist)
         self.assertEqual(args.delimiter, b'\0')
 
+    def test_delimiters_exclusive(self):
+        arglist = self.build_arglist(['-0', '-d_', '_', 'echo'])
+        self.assertParseError(arglist)
+
+    def test_delimiter_exclusive_with_eof(self, delim_opt='-d_'):
+        arglist = self.build_arglist([delim_opt, '-E', 'EOF', '_', 'echo'])
+        self.assertParseError(arglist)
+
+    def test_null_exclusive_with_eof(self):
+        self.test_delimiter_exclusive_with_eof('-0')
+
     def test_xargs_options(self):
         arglist = self.build_arglist(['-E', 'EOF', '-I', '{}', '_', 'echo'])
         args, xargs_opts = xg.ArgumentParser().parse_args(arglist)

@@ -398,15 +398,16 @@ class ArgumentParser(argparse.ArgumentParser):
             '--arg-file', '-a', metavar='FILE',
             help="Read arguments from file instead of stdin")
         self.add_argument(
-            '--delimiter', '-d', metavar='CHAR',
-            help="Separator character for arguments")
-        self.add_argument(
             '--encoding', default=ENCODING,
             help="Encoding for all I/O")
-        self.add_argument(
+        delim_group = self.add_mutually_exclusive_group()
+        delim_group.add_argument(
+            '--delimiter', '-d', metavar='CHAR',
+            help="Separator character for arguments")
+        delim_group.add_argument(
             '--eof-str', '--eof', '-E', metavar='EOF',
             help="Stop reading input at a line with this string")
-        self.add_argument(
+        delim_group.add_argument(
             '--null', '-0',
             dest='delimiter', action='store_const', const=r'\0',
             help="Use the null character as the delimiter")
