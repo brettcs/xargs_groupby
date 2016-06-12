@@ -10,7 +10,7 @@ import io
 import unittest
 
 import xargs_groupby as xg
-from . import mock, PY_MAJVER
+from . import mock, FOREIGN_ENCODING, PY_MAJVER
 
 class ArgumentParserTestCase(unittest.TestCase):
     ARGV_ENCODING = 'utf-8'
@@ -65,30 +65,28 @@ class ArgumentParserTestCase(unittest.TestCase):
         arglist = self.build_arglist(['--preexec=date', '_', 'echo'])
         self.assertParseError(arglist)
 
-    def test_delimiter(self):
-        arglist = self.build_arglist(delimiter='Z', encoding='ascii')
+    def test_unicode_delimiter(self, delimiter='♥', expected=None):
+        if expected is None:
+            expected = delimiter
+        # We specify an encoding to ensure it's not used to decode the
+        # delimiter itself in Python 2.
+        arglist = self.build_arglist(delimiter=delimiter, encoding=FOREIGN_ENCODING)
         args, _ = xg.ArgumentParser().parse_args(arglist)
-        self.assertEqual(args.delimiter, b'Z')
+        self.assertEqual(args.delimiter, expected)
 
-    def test_no_multibyte_delimiter(self):
-        arglist = self.build_arglist(delimiter='a', encoding='utf-16')
-        self.assertParseError(arglist)
+    def test_multichar_delimiter(self):
+        self.test_unicode_delimiter('←→')
 
     def test_newline_escaped_delimiter(self):
-        arglist = self.build_arglist(delimiter=r'\n', encoding='ascii')
-        args, _ = xg.ArgumentParser().parse_args(arglist)
-        self.assertEqual(args.delimiter, b'\n')
+        self.test_unicode_delimiter(r'\n', '\n')
 
-    def test_8bit_delimiter(self):
-        # This also tests that we decode arglist correctly on Python 2.
-        arglist = self.build_arglist(delimiter='ä', encoding='latin-1')
-        args, _ = xg.ArgumentParser().parse_args(arglist)
-        self.assertEqual(args.delimiter, 'ä'.encode('latin-1'))
+    def test_multichar_escaped_delimiter(self):
+        self.test_unicode_delimiter(r'\t\t', '\t\t')
 
     def test_null(self):
         arglist = self.build_arglist(['-0', '_', 'echo'])
         args, _ = xg.ArgumentParser().parse_args(arglist)
-        self.assertEqual(args.delimiter, b'\0')
+        self.assertEqual(args.delimiter, '\0')
 
     def test_delimiters_exclusive(self):
         arglist = self.build_arglist(['-0', '-d_', '_', 'echo'])

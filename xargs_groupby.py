@@ -502,8 +502,8 @@ class ArgumentParser(argparse.ArgumentParser):
             help="Encoding for all I/O")
         delim_group = self.add_mutually_exclusive_group()
         delim_group.add_argument(
-            '--delimiter', '-d', metavar='CHAR',
-            help="Separator character for arguments")
+            '--delimiter', '-d', metavar='STR',
+            help="Separator string for arguments")
         delim_group.add_argument(
             '--eof-str', '--eof', '-E', metavar='EOF',
             help="Stop reading input at a line with this string")
@@ -527,16 +527,12 @@ class ArgumentParser(argparse.ArgumentParser):
             nargs='+', metavar='COMMAND', action=CommandAction, **kwargs))
         return self.command_opts[-1]
 
-    def _delimiter_byte(self, delimiter_s, encoding):
-        if re.match(r'^\\[0abfnrtv]$', delimiter_s):
-            delimiter_s = eval('u"{}"'.format(delimiter_s), {})
-        try:
-            delimiter_b = delimiter_s.encode(encoding)
-        except UnicodeEncodeError:
-            self.error("delimiter {!r} can't be encoded to {}".format(delimiter_s, args.encoding))
-        if len(delimiter_b) > 1:
-            self.error("delimiter {!r} spans multiple bytes".format(delimiter_s))
-        return delimiter_b
+    @staticmethod
+    def _parse_escape(match):
+        return eval('u"{}"'.format(match.group(0)), {})
+
+    def _parse_escapes(self, delimiter_s):
+        return re.subn(r'\\[0abfnrtv]', self._parse_escape, delimiter_s)[0]
 
     def parse_command_options(self, arglist, namespace):
         switch_dest_map = {switch: option.dest
@@ -574,7 +570,7 @@ class ArgumentParser(argparse.ArgumentParser):
             setattr(xargs_opts, xargs_optname, getattr(args, xargs_optname))
             delattr(args, xargs_optname)
         if args.delimiter is not None:
-            args.delimiter = self._delimiter_byte(args.delimiter, args.encoding)
+            args.delimiter = self._parse_escapes(args.delimiter)
         return args, xargs_opts
 
 
