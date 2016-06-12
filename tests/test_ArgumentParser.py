@@ -83,6 +83,24 @@ class ArgumentParserTestCase(unittest.TestCase):
     def test_multichar_escaped_delimiter(self):
         self.test_unicode_delimiter(r'\t\t', '\t\t')
 
+    def test_escaped_byte_delimiter(self, char='101', prefix='\\', base=None):
+        if base is None:
+            base = 16 if (prefix == '\\x') else 8
+        expected = chr(int(char, base))
+        self.test_unicode_delimiter(prefix + char, expected)
+
+    def test_octal_escaped_delimiter_2digits(self):
+        self.test_escaped_byte_delimiter('77')
+
+    def test_octal_escaped_delimiter_1digit(self):
+        self.test_escaped_byte_delimiter('3')
+
+    def test_hex_escaped_delimiter_2digits(self):
+        self.test_escaped_byte_delimiter('42', '\\x')
+
+    def test_hex_escaped_delimiter_1digit(self):
+        self.test_escaped_byte_delimiter('d', '\\x')
+
     def test_null(self):
         arglist = self.build_arglist(['-0', '_', 'echo'])
         args, _ = xg.ArgumentParser().parse_args(arglist)

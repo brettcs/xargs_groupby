@@ -529,10 +529,17 @@ class ArgumentParser(argparse.ArgumentParser):
 
     @staticmethod
     def _parse_escape(match):
-        return eval('u"{}"'.format(match.group(0)), {})
+        groups = match.groups()
+        if groups[1]:
+            return chr(int(groups[1], 8))
+        elif groups[2]:
+            return chr(int(groups[2], 16))
+        else:
+            return eval('u"\\{}"'.format(groups[0]), {})
 
     def _parse_escapes(self, delimiter_s):
-        return re.subn(r'\\[0abfnrtv]', self._parse_escape, delimiter_s)[0]
+        return re.subn(r'\\([abfnrtv]|([0-9]{1,3})|x([0-9a-fA-F]{1,2}))',
+                       self._parse_escape, delimiter_s)[0]
 
     def parse_command_options(self, arglist, namespace):
         switch_dest_map = {switch: option.dest
