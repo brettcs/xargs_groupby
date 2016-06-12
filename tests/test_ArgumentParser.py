@@ -30,19 +30,40 @@ class ArgumentParserTestCase(unittest.TestCase):
 
     build_arglist = _build_arglist_py2 if (PY_MAJVER < 3) else _build_arglist
 
-    def test_preexec(self):
-        pre_cmd = ['mkdir', '{}']
-        xargs_cmd = ['mv', '-t', '{}']
-        arglist = self.build_arglist(['--pre'] + pre_cmd + ['--', '_'] + xargs_cmd)
+    def test_command_parsed_wholly(self, xargs_cmd=['mv', '-t', '{}']):
+        arglist = self.build_arglist(['_'] + xargs_cmd)
+        args, _ = xg.ArgumentParser().parse_args(arglist)
+        self.assertEqual(args.command, xargs_cmd)
+
+    def test_command_with_switch_conflict(self):
+        self.test_command_parsed_wholly(['cat', '-E'])
+
+    def test_preexec(self, pre_cmd=['mkdir', '{}'],
+                     xargs_cmd=['mv', '-t', '{}']):
+        arglist = self.build_arglist(['--pre'] + pre_cmd + [';', '_'] + xargs_cmd)
         args, _ = xg.ArgumentParser().parse_args(arglist)
         self.assertEqual(args.preexec, pre_cmd)
         self.assertEqual(args.command, xargs_cmd)
+
+    def test_preexec_with_switches(self):
+        self.test_preexec(['mkdir', '-p', '{}'])
+
+    def test_preexec_with_switch_conflict(self):
+        self.test_preexec(['test', '-d', '{}'])
 
     def assertParseError(self, arglist):
         with mock.patch('sys.stderr', io.StringIO()), \
              self.assertRaises(SystemExit) as exc_test:
             xg.ArgumentParser().parse_args(arglist)
         self.assertEqual(exc_test.exception.code, 2)
+
+    def test_unterminated_preexec(self):
+        arglist = self.build_arglist(['--pre', 'foo', '-bar', '_', 'echo'])
+        self.assertParseError(arglist)
+
+    def test_one_arg_preexec(self):
+        arglist = self.build_arglist(['--preexec=date', '_', 'echo'])
+        self.assertParseError(arglist)
 
     def test_delimiter(self):
         arglist = self.build_arglist(delimiter='Z', encoding='ascii')

@@ -425,10 +425,17 @@ class VersionAction(argparse.Action):
         parser.exit(0)
 
 
+class CommandAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string):
+        parser.error("{} command must be specified as a list of arguments terminated with ';'".
+                     format(option_string))
+
+
 class ArgumentParser(argparse.ArgumentParser):
     ARGV_ENCODING = ENCODING
 
     def __init__(self):
+        self.command_opts = []
         self.xargs_parser = argparse.ArgumentParser(prog='xargs', add_help=False)
         xargs_opts = self.xargs_parser.add_argument_group(
             "xargs options", "Switches passed directly to xargs calls")
@@ -475,15 +482,21 @@ class ArgumentParser(argparse.ArgumentParser):
             '--null', '-0',
             dest='delimiter', action='store_const', const=r'\0',
             help="Use the null character as the delimiter")
-        self.add_argument(
-            '--preexec', '--pre', nargs='+', metavar='COMMAND',
-            help="Command to run per group before the main command, terminated with --")
+        self.add_command_argument(
+            '--preexec', '--pre',
+            help="Command to run per group before the main command, terminated with ';'")
         self.add_argument(
             'group_code',
             help="Python expression or callable to group arguments")
         self.add_argument(
-            'command', nargs='+', metavar='command',
+            'command', nargs=argparse.REMAINDER, metavar='command',
             help="Command to run per group, with the grouped arguments")
+
+    def add_command_argument(self, *option_strings, **kwargs):
+        self.command_opts.append(self.add_argument(
+            *option_strings,
+            nargs='+', metavar='COMMAND', action=CommandAction, **kwargs))
+        return self.command_opts[-1]
 
     def _delimiter_byte(self, delimiter_s, encoding):
         if re.match(r'^\\[0abfnrtv]$', delimiter_s):
@@ -496,11 +509,41 @@ class ArgumentParser(argparse.ArgumentParser):
             self.error("delimiter {!r} spans multiple bytes".format(delimiter_s))
         return delimiter_b
 
-    def parse_args(self, arglist=None):
+    def parse_command_options(self, arglist, namespace):
+        switch_dest_map = {switch: option.dest
+                           for option in self.command_opts
+                           for switch in option.option_strings}
+        start_index = 0
+        while True:
+            try:
+                switch = arglist[start_index]
+            except IndexError:
+                break
+            try:
+                dest = switch_dest_map[switch]
+            except KeyError:
+                start_index += 1
+                continue
+            try:
+                end_index = arglist.index(';', start_index)
+            except ValueError:
+                self.error("{} command not terminated with ';'".format(switch))
+            setattr(namespace, dest, arglist[start_index + 1:end_index])
+            del arglist[start_index:end_index + 1]
+
+    def parse_args(self, arglist, namespace=None):
         if PY_MAJVER < 3:
             arglist = [arg.decode(self.ARGV_ENCODING) for arg in arglist]
-        xargs_opts, arglist = self.xargs_parser.parse_known_args(arglist)
-        args = super(ArgumentParser, self).parse_args(arglist)
+        else:
+            arglist = list(arglist)
+        if namespace is None:
+            namespace = argparse.Namespace()
+        self.parse_command_options(arglist, namespace)
+        args = super(ArgumentParser, self).parse_args(arglist, namespace)
+        xargs_opts = self.xargs_parser.parse_args([])
+        for xargs_optname in vars(xargs_opts):
+            setattr(xargs_opts, xargs_optname, getattr(args, xargs_optname))
+            delattr(args, xargs_optname)
         if args.delimiter is not None:
             args.delimiter = self._delimiter_byte(args.delimiter, args.encoding)
         return args, xargs_opts
