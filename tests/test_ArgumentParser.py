@@ -31,12 +31,15 @@ class ArgumentParserTestCase(unittest.TestCase):
     build_arglist = _build_arglist_py2 if (PY_MAJVER < 3) else _build_arglist
 
     def test_command_parsed_wholly(self, xargs_cmd=['mv', '-t', '{}']):
-        arglist = self.build_arglist(['_'] + xargs_cmd)
+        arglist = self.build_arglist(['--', '_'] + xargs_cmd)
         args, _ = xg.ArgumentParser().parse_args(arglist)
         self.assertEqual(args.command, xargs_cmd)
 
     def test_command_with_switch_conflict(self):
         self.test_command_parsed_wholly(['cat', '-E'])
+
+    def test_command_with_command_switch_conflict(self):
+        self.test_command_parsed_wholly(['xgtest', '--pre', '9'])
 
     def test_preexec(self, pre_cmd=['mkdir', '{}'],
                      xargs_cmd=['mv', '-t', '{}']):
@@ -50,6 +53,9 @@ class ArgumentParserTestCase(unittest.TestCase):
 
     def test_preexec_with_switch_conflict(self):
         self.test_preexec(['test', '-d', '{}'])
+
+    def test_preexec_with_dashdash(self):
+        self.test_preexec(['mkdir', '--', '{}'])
 
     def assertParseError(self, arglist):
         with mock.patch('sys.stderr', io.StringIO()), \

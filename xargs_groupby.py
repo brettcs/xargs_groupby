@@ -551,6 +551,8 @@ class ArgumentParser(argparse.ArgumentParser):
                 switch = arglist[start_index]
             except IndexError:
                 break
+            if switch == '--':
+                break
             try:
                 dest = switch_dest_map[switch]
             except KeyError:
