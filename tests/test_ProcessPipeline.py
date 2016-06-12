@@ -9,7 +9,7 @@ from __future__ import unicode_literals
 import unittest
 
 import xargs_groupby as xg
-from . import mock
+from . import mock, FOREIGN_ENCODING
 from .mocks import FakeProcessWriter
 
 class ProcessPipelineTestCase(unittest.TestCase):
@@ -87,3 +87,11 @@ class ProcessPipelineTestCase(unittest.TestCase):
         pipeline.next_proc()
         pipeline.next_proc()
         self.assertIsNone(pipeline.success())
+
+    def test_encoding_passed_to_writers(self):
+        self.add_procs([0])
+        call_args = (['m'], iter([]), FOREIGN_ENCODING)
+        raw_pipeline = [call_args[:2]]
+        pipeline = xg.ProcessPipeline(raw_pipeline, encoding=FOREIGN_ENCODING)
+        pipeline.next_proc()
+        xg.ProcessPipeline.ProcessWriter.assert_called_with(*call_args)
