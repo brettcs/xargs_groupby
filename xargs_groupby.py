@@ -109,6 +109,35 @@ class InputShlexer(object):
             yield token
 
 
+class InputSplitter(object):
+    def __init__(self, in_stream, delimiter):
+        self.in_stream = in_stream
+        self.delimiter = delimiter
+
+    def __iter__(self):
+        delimiter_len = len(self.delimiter)
+        pre_strings = []
+        for hunk in iter(lambda: self.in_stream.read(4096), ''):
+            try:
+                split_index = hunk.index(self.delimiter)
+            except ValueError:
+                pre_strings.append(hunk)
+                continue
+            yield ''.join(pre_strings) + hunk[:split_index]
+            pre_strings = []
+            while True:
+                start_index = split_index + delimiter_len
+                try:
+                    split_index = hunk.index(self.delimiter, start_index)
+                except ValueError:
+                    if start_index < len(hunk):
+                        pre_strings.append(hunk[start_index:])
+                    break
+                yield hunk[start_index:split_index]
+        if pre_strings:
+            yield ''.join(pre_strings)
+
+
 class NameChecker(ast.NodeVisitor):
     def __init__(self, names):
         self.names = names
