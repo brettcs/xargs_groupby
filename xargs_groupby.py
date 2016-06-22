@@ -238,6 +238,23 @@ class UserExpression(object):
             return self.func(arg)
 
 
+class InputPrepper(object):
+    def __init__(self, group_func, delimiter=None, encoding=ENCODING):
+        self.group_func = group_func
+        self.delimiter = delimiter
+        self.encoding = encoding
+        self._groups = collections.defaultdict(list)
+
+    def add(self, arg_seq):
+        for arg in arg_seq:
+            key = self.group_func(arg)
+            arg_bytes = arg.encode(self.encoding)
+            self._groups[key].append(arg_bytes)
+
+    def groups(self):
+        return self._groups
+
+
 class GroupCommand(object):
     def __init__(self, command, key_string):
         self.template = list(command)
@@ -581,10 +598,3 @@ class ArgumentParser(argparse.ArgumentParser):
         if args.delimiter is not None:
             args.delimiter = self._parse_escapes(args.delimiter)
         return args, xargs_opts
-
-
-def group_args(args_iter, key_func):
-    groups = collections.defaultdict(list)
-    for argument in args_iter:
-        groups[key_func(argument)].append(argument)
-    return groups
