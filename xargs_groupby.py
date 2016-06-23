@@ -239,20 +239,77 @@ class UserExpression(object):
 
 
 class InputPrepper(object):
+    NO_GROUP_KEY = object()
+
+    class DelimiterFinder(object):
+        def __init__(self):
+            if PY_MAJVER < 3:
+                self.eligible = set(chr(n) for n in xrange(256))
+            else:
+                self.eligible = set(bytes(range(256)))
+            self.last_used = None
+            self.last_result = None
+
+        def exclude(self, bytes_arg):
+            self.eligible.difference_update(bytes_arg)
+
+        @staticmethod
+        def escape(byte):
+            try:
+                byte = ord(byte)
+            except TypeError:  # A single byte is an int in Py3.
+                pass
+            return '\\{:03o}'.format(byte)
+
+        def delimiter(self):
+            if self.last_used not in self.eligible:
+                try:
+                    self.last_used = next(iter(self.eligible))
+                except StopIteration:
+                    raise ValueError("no possible delimiter - input covers all bytes")
+                self.last_result = self.escape(self.last_used)
+            return self.last_result
+
+
     def __init__(self, group_func, delimiter=None, encoding=ENCODING):
         self.group_func = group_func
-        self.delimiter = delimiter
         self.encoding = encoding
+        try:
+            delimiter_b = delimiter.encode(self.encoding)
+        except (AttributeError, UnicodeEncodeError):
+            delimiter_b = b''
+        if len(delimiter_b) == 1:
+            self._delimiter = self.DelimiterFinder.escape(delimiter_b[0])
+        else:
+            self._delimiter = None
+            self._delimiter_finder = self.DelimiterFinder()
         self._groups = collections.defaultdict(list)
 
     def add(self, arg_seq):
         for arg in arg_seq:
             key = self.group_func(arg)
             arg_bytes = arg.encode(self.encoding)
+            if self._delimiter is None:
+                self._delimiter_finder.exclude(arg_bytes)
             self._groups[key].append(arg_bytes)
 
     def groups(self):
         return self._groups
+
+    def delimiter(self, group_key=NO_GROUP_KEY):
+        if self._delimiter is not None:
+            return self._delimiter
+        try:
+            return self._delimiter_finder.delimiter()
+        except ValueError:
+            if group_key is self.NO_GROUP_KEY:
+                raise
+        if group_key not in self._groups:
+            raise KeyError(group_key)
+        finder = self.DelimiterFinder()
+        for byte_arg in self._groups[group_key]:
+            finder.exclude(byte_arg)
+        return finder.delimiter()
 
 
 class GroupCommand(object):
