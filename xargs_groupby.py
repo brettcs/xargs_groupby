@@ -24,19 +24,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>."""
 import argparse
 import ast
 import collections
+import functools
 import imp
+import importlib
 import io
 import itertools
 import locale
-import operator
 import os
 import re
 import select
 import shlex
 import subprocess
 import sys
-import types
 import warnings
+
+# Since this script stands alone, there's no need for relative imports.
+# Remove the script's directory from sys.path to avoid surprising or
+# dangerous behavior when importing for UserExpressions.
+del sys.path[0]
 
 try:
     unicode
@@ -159,25 +164,136 @@ class NameChecker(ast.NodeVisitor):
         record_set.add(node.id)
 
 
+MODULE_ALL = object()
 class UserExpression(object):
     SOURCE = '<user expression>'
+    MODULE_WHITELIST = {
+        'binascii': MODULE_ALL,
+        'bz2': MODULE_ALL,
+        'codecs': MODULE_ALL,
+        'collections': MODULE_ALL,
+        'colorsys': MODULE_ALL,
+        'csv': ['reader', 'DictReader', 'Sniffer'],
+        'datetime': MODULE_ALL,
+        'decimal': MODULE_ALL,
+        'difflib': MODULE_ALL,
+        'filecmp': MODULE_ALL,
+        'fnmatch': MODULE_ALL,
+        'functools': MODULE_ALL,
+        'gzip': MODULE_ALL,
+        'hashlib': MODULE_ALL,
+        'imghdr': ['what'],
+        'io': ['BytesIO', 'StringIO', 'SEEK_SET', 'SEEK_CUR', 'SEEK_END', 'open'],
+        'itertools': MODULE_ALL,
+        'json': ['load', 'loads'],
+        'keyword': MODULE_ALL,
+        'locale': [name for name in dir(locale) if not name.endswith('setlocale')],
+        'math': MODULE_ALL,
+        'mimetypes': MODULE_ALL,
+        'operator': MODULE_ALL,
+        'os': ['access', 'path', 'fstat', 'fstatvfs', 'linesep', 'major',
+               'minor', 'stat', 'statvfs', 'SEEK_SET', 'SEEK_CUR', 'SEEK_END'],
+        'random': MODULE_ALL,
+        're': MODULE_ALL,
+        'shlex': ['split'],
+        'string': MODULE_ALL,
+        'struct': MODULE_ALL,
+        'tarfile': ['open', 'is_tarfile', 'TarFile'],
+        'time': MODULE_ALL,
+        'unicodedata': MODULE_ALL,
+        'uu': ['decode'],
+        'zipfile': MODULE_ALL,
+        'zlib': MODULE_ALL,
+    }
 
-    _builtins = __builtins__ if isinstance(__builtins__, dict) else vars(__builtins__)
-    _EVAL_VARS = {key: value for key, value in _builtins.items()
-                  if not (key.startswith('_') or (key in set(
-                          ['eval', 'exec', 'exit', 'open', 'quit'])))}
-    _EVAL_VARS['__builtins__'] = _EVAL_VARS
+    def _build_whitelisted_module(module_name, names_whitelist):
+        src_module = importlib.import_module(module_name)
+        if names_whitelist is MODULE_ALL:
+            try:
+                names_whitelist = src_module.__all__
+            except AttributeError:
+                names_whitelist = (name for name in dir(src_module)
+                                   if not name.startswith('_'))
+        new_module = imp.new_module(module_name)
+        for name in names_whitelist:
+            setattr(new_module, name, getattr(src_module, name))
+        return new_module
 
-    def _open(path, mode='r', *args, **kwargs):
-        if not all(c in set('rbtU') for c in mode):
-            raise ValueError('invalid mode: {!r}'.format(mode))
-        return io.open(path, mode, *args, **kwargs)
-    _EVAL_VARS['open'] = _open
+    def _load_whitelisted_module(self, module_name):
+        names_whitelist = self.MODULE_WHITELIST[module_name]
+        new_module = self._build_whitelisted_module(module_name, names_whitelist)
+        try:
+            load_callback = getattr(self, '_{}_module_loaded'.format(module_name))
+        except AttributeError:
+            pass
+        else:
+            load_callback(new_module)
+        self._EVAL_VARS[module_name] = new_module
 
-    _EVAL_VARS['os'] = types.ModuleType(os.__name__)
-    _EVAL_VARS['os'].path = os.path
+    def _check_open_mode(argname='mode', argindex=1, allowed='rbtU', default='r'):
+        def check_open_mode_decorator(orig_func):
+            @functools.wraps(orig_func)
+            def check_open_mode(*args, **kwargs):
+                try:
+                    mode = kwargs[argname]
+                except KeyError:
+                    try:
+                        mode = args[argindex]
+                    except IndexError:
+                        mode = default
+                if not all(c in set(allowed) for c in mode):
+                    raise ValueError('invalid mode: {!r}'.format(mode))
+                return orig_func(*args, **kwargs)
+            return check_open_mode
+        return check_open_mode_decorator
 
-    del _open
+    def _module_with_openers_loaded(self, new_module, *opener_names):
+        if not opener_names:
+            opener_names = ('open',)
+        for opener_name in opener_names:
+            opener = getattr(new_module, opener_name)
+            setattr(new_module, opener_name, self._check_open_mode()(opener))
+
+    _codecs_module_loaded = _module_with_openers_loaded
+    _io_module_loaded = _module_with_openers_loaded
+
+    def _bz2_module_loaded(self, bz2_module):
+        self._module_with_openers_loaded(bz2_module, 'BZ2File')
+
+    def _gzip_module_loaded(self, gzip_module):
+        self._module_with_openers_loaded(gzip_module, 'GzipFile', 'open')
+
+    def _tarfile_module_loaded(self, tar_module):
+        for attr_name in dir(tar_module.TarFile):
+            if attr_name.startswith(('add', 'extract')):
+                delattr(tar_module.TarFile, attr_name)
+        check_tar_mode = self._check_open_mode(allowed='r:|gbz2')
+        tar_module.open = check_tar_mode(tar_module.open)
+        tar_module.TarFile = check_tar_mode(tar_module.TarFile)
+
+    def _time_module_loaded(self, time_module):
+        del time_module.sleep, time_module.tzset
+
+    def _zipfile_module_loaded(self, zip_module):
+        for klass in [zip_module.ZipFile, zip_module.PyZipFile]:
+            for attr_name in dir(klass):
+                if attr_name.startswith(('extract', 'setpassword', 'write')):
+                    delattr(klass, attr_name)
+        check_zip_mode = self._check_open_mode(allowed='r')
+        zip_module.ZipFile = check_zip_mode(zip_module.ZipFile)
+        zip_module.PyZipFile = check_zip_mode(zip_module.PyZipFile)
+
+    _builtins_modname = '__builtin__' if (PY_MAJVER < 3) else 'builtins'
+    _builtins_module = importlib.import_module(_builtins_modname)
+    _builtins_whitelist = [name for name in dir(_builtins_module)
+                           if not (name.startswith('_') or (name in set(
+                                   ['eval', 'exec', 'exit', 'file', 'open', 'quit'])))]
+    _builtins = _build_whitelisted_module(_builtins_modname, _builtins_whitelist)
+    _builtins.open = _check_open_mode()(io.open)
+    _EVAL_VARS = vars(_builtins)
+    _EVAL_VARS[_builtins_modname] = _builtins
+    _EVAL_VARS['__builtins__'] = _builtins
+    del _builtins, _builtins_modname, _builtins_module, _builtins_whitelist
 
     def __init__(self, expr_s):
         try:
@@ -185,31 +301,37 @@ class UserExpression(object):
         except SyntaxError as error:
             raise ValueError(*error.args)
         name_checker = NameChecker(self._EVAL_VARS)
-        _, unused_names = name_checker.check(parsed_ast)
-        unused_names_count = len(unused_names)
-        if unused_names_count > 1:
+        _, unloaded_names = name_checker.check(parsed_ast)
+        unknown_names = set()
+        for name in unloaded_names:
+            try:
+                self._load_whitelisted_module(name)
+            except KeyError:
+                unknown_names.add(name)
+        unknown_names_count = len(unknown_names)
+        if unknown_names_count > 1:
             raise ValueError("names {} are not defined".format(
-                ", ".join(repr(name) for name in unused_names)))
-        elif unused_names_count == 1:
-            unused_name = unused_names.pop()
-            name_error = ValueError("name {!r} is not defined".format(unused_name))
+                ", ".join(repr(name) for name in unknown_names)))
+        elif unknown_names_count == 1:
+            unknown_name = unknown_names.pop()
+            name_error = ValueError("name {!r} is not defined".format(unknown_name))
             # If the name refers to a module that isn't in _EVAL_VARS,
             # always treat it as an error, rather than overloading the name.
             try:
-                module_file = imp.find_module(unused_name)[0]
+                module_file = imp.find_module(unknown_name)[0]
             except ImportError:
                 pass
             else:
                 if module_file is not None:
                     module_file.close()
                 raise name_error
-            # Ensure the unused name is the argument of a callable.
+            # Ensure the unknown name is the argument of a callable.
             # If this expression isn't callable, wrap it in a lambda.
             try:
                 arg_node = parsed_ast.body.args.args[0]
             except AttributeError:
                 parsed_ast = ast.parse(
-                    'lambda {}: {}'.format(unused_name, expr_s),
+                    'lambda {}: {}'.format(unknown_name, expr_s),
                     self.SOURCE, 'eval')
             except IndexError:
                 raise ValueError("callable expression accepts no argument")
@@ -218,7 +340,7 @@ class UserExpression(object):
                     arg_name = arg_node.arg
                 except AttributeError:
                     arg_name = arg_node.id
-                if unused_name != arg_name:
+                if unknown_name != arg_name:
                     raise name_error
         expr_code = compile(parsed_ast, self.SOURCE, 'eval')
         try:
@@ -236,6 +358,9 @@ class UserExpression(object):
             except NameError:
                 pass
             return self.func(arg)
+
+    _build_whitelisted_module = staticmethod(_build_whitelisted_module)
+    _check_open_mode = staticmethod(_check_open_mode)
 
 
 class InputPrepper(object):

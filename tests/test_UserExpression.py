@@ -6,12 +6,24 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+import importlib
 import io
+import itertools
 import os.path
+import re
+import tarfile
 import unittest
+import zipfile
 
 import xargs_groupby as xg
 from . import mock, FOREIGN_ENCODING
+
+NONEXISTENT_PATH = os.path.join(__file__, '/_nonexistent/path')
+
+def walk_attrs(obj, attr_seq):
+    for attr_name in attr_seq:
+        obj = getattr(obj, attr_name)
+    return obj
 
 class UserExpressionTestCase(unittest.TestCase):
     def test_simple_callable(self):
@@ -54,49 +66,6 @@ class UserExpressionTestCase(unittest.TestCase):
         expr = xg.UserExpression('os.path.basename')
         self.assertEqual(expr(os.path.join('dir', 'test')), 'test')
 
-    def patch_open(self, body='one\ntwo\n', return_class=io.StringIO):
-        return_file = return_class(body)
-        io_mock = mock.Mock(name='io.open mock',
-                            spec_set=return_file,
-                            return_value=return_file)
-        return mock.patch('io.open', io_mock)
-
-    def test_open_usable(self):
-        expr = xg.UserExpression('open(_).readline()')
-        with self.patch_open() as open_mock:
-            self.assertEqual(expr('path'), 'one\n')
-        open_mock.assert_called_once_with('path', 'r')
-
-    def test_open_supports_encoding(self):
-        expr = xg.UserExpression('open(_, encoding={!r}).readline()'.
-                                 format(FOREIGN_ENCODING))
-        with self.patch_open('Ä\nË\n') as open_mock:
-            self.assertEqual(expr('path'), 'Ä\n')
-        open_mock.assert_called_once_with('path', 'r',
-                                          encoding=FOREIGN_ENCODING)
-
-    def test_open_supports_bytes(self):
-        expr = xg.UserExpression('open(_, "rb").readline()')
-        lines = [s.encode(FOREIGN_ENCODING) for s in ['Ö\n', 'Ü\n']]
-        with self.patch_open(bytes().join(lines), io.BytesIO) as open_mock:
-            self.assertEqual(expr('path'), lines[0])
-        open_mock.assert_called_once_with('path', 'rb')
-
-    def test_open_write_fails(self, mode='w'):
-        expr = xg.UserExpression('open(_, {!r}).readline()'.format(mode))
-        with self.patch_open() as open_mock, self.assertRaises(ValueError):
-            expr('path')
-        self.assertEqual(open_mock.call_count, 0)
-
-    def test_open_append_fails(self):
-        self.test_open_write_fails('a')
-
-    def test_open_create_fails(self):
-        self.test_open_write_fails('x')
-
-    def test_open_read_write_fails(self):
-        self.test_open_write_fails('r+')
-
     def test_syntax_error(self, expr_s='lambda s:'):
         with self.assertRaises(ValueError):
             xg.UserExpression(expr_s)
@@ -119,7 +88,7 @@ class UserExpressionTestCase(unittest.TestCase):
         self.test_syntax_error('lambda a, b: a')
 
     def test_os_not_usable(self):
-        self.test_syntax_error('os.stat')
+        self.test_syntax_error('os.abort')
 
     def test_other_imported_module_not_usable(self):
         self.test_syntax_error('warnings.resetwarnings')
@@ -129,6 +98,9 @@ class UserExpressionTestCase(unittest.TestCase):
 
     def test_exit_not_usable(self):
         self.test_syntax_error('exit(_)')
+
+    def test_file_not_usable(self):
+        self.test_syntax_error('file(_)')
 
     def test_xg_contents_not_usable(self):
         for name in ['NameChecker', 'UserExpression', 'name']:
@@ -140,3 +112,88 @@ class UserExpressionTestCase(unittest.TestCase):
             else:
                 self.fail("expression {!r} did not raise ValueError".
                           format(expr_s))
+
+    def empty_tar_expr(self, append=''):
+        tar_bytes = io.BytesIO()
+        tar_start = tarfile.open(mode='w', fileobj=tar_bytes)
+        tar_start.close()
+        return 'tarfile.open(fileobj=io.BytesIO({!r})){}'.format(tar_bytes.getvalue(), append)
+
+    def test_tarfile_not_addable(self, method_name='add'):
+        expr = xg.UserExpression(self.empty_tar_expr('.{}(_)'.format(method_name)))
+        with self.assertRaises(AttributeError):
+            expr('.')
+
+    def test_tarfile_not_extractable(self):
+        self.test_tarfile_not_addable('extractall')
+
+    def empty_zip_expr(self, class_name, append):
+        zip_bytes = io.BytesIO()
+        zip_start = zipfile.ZipFile(zip_bytes, 'w')
+        zip_start.close()
+        return '{}(io.BytesIO({!r})){}'.format(class_name, zip_bytes.getvalue(), append)
+
+    def test_zipfile_not_addable(self, class_name='zipfile.ZipFile', method_name='write'):
+        expr = xg.UserExpression(self.empty_zip_expr(class_name, '.{}(_)'.format(method_name)))
+        with self.assertRaises(AttributeError):
+            expr('.')
+
+    def test_zipfile_not_extractable(self):
+        self.test_zipfile_not_addable(method_name='extractall')
+
+    def test_pyzipfile_not_addable(self):
+        self.test_zipfile_not_addable(class_name='zipfile.PyZipFile')
+
+    def test_pyzipfile_not_extractable(self):
+        self.test_zipfile_not_addable(class_name='zipfile.PyZipFile', method_name='extractall')
+
+
+def IOWrapperTests(expr_func_name, bad_modes,
+                   call_fmt='{0}(_, {1!r}).read(1)', src_func_name=None):
+    if src_func_name is None:
+        src_func_name = expr_func_name
+    name_parts = src_func_name.split('.')
+    if len(name_parts) == 1:
+        src_func = globals()[name_parts[0]]
+    else:
+        name_parts = iter(name_parts)
+        src_module = importlib.import_module(next(name_parts))
+        src_func = walk_attrs(src_module, name_parts)
+
+    class IOWrapperTestCase(unittest.TestCase):
+        if not hasattr(unittest.TestCase, 'assertRaisesRegex'):
+            assertRaisesRegex = unittest.TestCase.assertRaisesRegexp
+
+        def test_function_wrapped(self):
+            expr = xg.UserExpression(expr_func_name)
+            name_parts = iter(expr_func_name.split('.'))
+            func = walk_attrs(expr._EVAL_VARS[next(name_parts)], name_parts)
+            self.assertIsNotNone(func.__closure__)
+            self.assertTrue(any(c.cell_contents is src_func for c in func.__closure__))
+            self.assertNotEqual(func.__code__.co_name, src_func.__name__)
+
+        _locals = locals()
+        for bad_mode in bad_modes:
+            def test_bad_mode_fails(self, mode=bad_mode):
+                expr = xg.UserExpression(call_fmt.format(expr_func_name, mode))
+                with self.assertRaisesRegex(ValueError, r'^invalid mode: '):
+                    expr(NONEXISTENT_PATH)
+            _locals['test_mode_{}_fails'.format(bad_mode)] = test_bad_mode_fails
+        del test_bad_mode_fails
+    IOWrapperTestCase.__name__ = str('{}WrapperTestCase'.format(re.sub(
+        r'(^|\.)(\w)', lambda match: match.group(2).upper(), expr_func_name)))
+    return IOWrapperTestCase
+
+OpenWrapperTest = IOWrapperTests('open', ['w', 'a', 'x', 'r+'], src_func_name='io.open')
+IOOpenWrapperTest = IOWrapperTests('io.open', ['w', 'a', 'x', 'r+'])
+BZ2FileWrapperTest = IOWrapperTests('bz2.BZ2File', ['w'])
+CodecsOpenWrapperTest = IOWrapperTests('codecs.open', ['w', 'a', 'x', 'r+'])
+GzipFileWrapperTest = IOWrapperTests('gzip.GzipFile', ['w', 'a', 'x', 'r+'])
+GzipOpenWrapperTest = IOWrapperTests('gzip.open', ['w', 'a', 'x', 'r+'])
+TAR_BAD_MODES = [''.join(parts) for parts in
+                 itertools.product('wa', ':|', ['', 'gz', 'bz2'])]
+TAR_BAD_MODES.extend('wa')
+TarOpenWrapperTest = IOWrapperTests('tarfile.open', TAR_BAD_MODES)
+TarFileWrapperTest = IOWrapperTests('tarfile.TarFile', TAR_BAD_MODES)
+ZipFileWrapperTest = IOWrapperTests('zipfile.ZipFile', 'wa')
+PyZipFileWrapperTest = IOWrapperTests('zipfile.PyZipFile', 'wa')
