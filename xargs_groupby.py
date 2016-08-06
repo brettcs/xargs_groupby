@@ -475,10 +475,10 @@ class XargsCommand(object):
 class ProcessWriter(object):
     Popen = subprocess.Popen
 
-    def __init__(self, cmd, input_seq, encoding=ENCODING):
+    def __init__(self, cmd, input_seq, sep_byte):
         self.proc = self.Popen(cmd, stdin=subprocess.PIPE)
         self.input_seq = iter(input_seq)
-        self.encoding = encoding
+        self.sep_byte = sep_byte
         self.returncode = None
         self.write_error = None
         self.write_buffer = bytearray()
@@ -487,11 +487,12 @@ class ProcessWriter(object):
 
     def _fill_buffer(self):
         try:
-            next_s = next(self.input_seq) + '\0'
+            self.write_buffer.extend(next(self.input_seq))
         except StopIteration:
             return False
         else:
-            self.write_buffer.extend(next_s.encode(self.encoding))
+            if self.sep_byte is not None:
+                self.write_buffer.append(self.sep_byte)
             return True
 
     def write(self, bytecount):
@@ -571,11 +572,11 @@ class ProcessPipeline(object):
                 self._success = proc_success
                 raise StopIteration
         try:
-            cmd, input_seq = next(self.proc_sources)
+            cmd, input_seq, sep_byte = next(self.proc_sources)
         except StopIteration:
             self._success = True
             raise
-        self.last_proc = self.ProcessWriter(cmd, input_seq, self.encoding)
+        self.last_proc = self.ProcessWriter(cmd, input_seq, sep_byte)
         return self.last_proc
 
     def success(self):
