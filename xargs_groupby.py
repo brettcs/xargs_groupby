@@ -456,10 +456,21 @@ class XargsCommand(object):
         self.group_cmd = group_cmd
         self.switches = {'--max-procs': '1'}
 
+    def set_options(self, args):
+        args_dict = vars(args)
+        for key in args_dict:
+            switch_name = '{}{}'.format(
+                '-' if (len(key) == 1) else '--',
+                key.replace('_', '-'))
+            self.switches[switch_name] = args_dict[key]
+
     def _iter_switches(self):
         for key in self.switches:
-            yield key
-            yield self.switches[key]
+            value = self.switches[key]
+            if value is True:
+                yield key
+            elif value:
+                yield '{}={}'.format(key, value)
 
     def command(self, group_key):
         return list(itertools.chain(self.xargs_base,

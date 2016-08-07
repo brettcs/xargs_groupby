@@ -6,6 +6,8 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+import argparse
+import re
 import unittest
 
 import xargs_groupby as xg
@@ -50,11 +52,54 @@ class XargsCommandTestCase(unittest.TestCase):
                 fail_reason = "no argument at index {!r}".format(index)
             self.fail("{}: {!r}".format(fail_reason, command))
 
-    def assertSwitchSet(self, command, switch_name, value):
-        command = self.xargs_part(command)
-        index = self.argument_index(command, switch_name)
-        self.assertArgumentAt(command, index + 1, value,
-                              "no value for switch {!r}".format(switch_name))
+    def assertSwitchSet(self, command, switch_name, value=None):
+        if value is None:
+            needle = switch_name
+        else:
+            needle = '{}={}'.format(switch_name, value)
+        self.assertIn(needle, self.xargs_part(command))
+
+    def assertSwitchUnset(self, command, switch_name):
+        self.assertFalse([switch for switch in self.xargs_part(command)
+                          if re.match(switch_name + '(=|$)', switch)])
+
+    def test_set_options(self, opts={}):
+        # args_dict should represent the default xargs options generated
+        # by ArgumentParser.
+        args_dict = {
+            '--exit': None,
+            '-I': None,
+            '--max-args': None,
+            '--max-chars': None,
+            '--verbose': None,
+        }
+        args_dict.update(opts)
+        self.xargs.set_options(argparse.Namespace(**{
+            key.lstrip('-').replace('-', '_'): args_dict[key]
+            for key in args_dict}))
+        command = self.xargs.command('key')
+        for key in args_dict:
+            value = args_dict[key]
+            if value is None:
+                self.assertSwitchUnset(command, key)
+            elif value is True:
+                self.assertSwitchSet(command, key)
+            else:
+                self.assertSwitchSet(command, key, value)
+
+    def test_set_verbose(self):
+        self.test_set_options({'--verbose': True})
+
+    def test_set_I(self):
+        self.test_set_options({'-I': '_'})
+
+    def test_set_many_options(self):
+        self.test_set_options({
+            '--exit': True,
+            '-I': '__',
+            '--max-chars': '9999',
+            '--max-args': '999',
+        })
 
     def test_default_procs(self):
         self.assertSwitchSet(self.xargs.command('key'), '--max-procs', '1')
