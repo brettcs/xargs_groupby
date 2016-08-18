@@ -467,10 +467,14 @@ class XargsCommand(object):
     def _iter_switches(self):
         for key in self.switches:
             value = self.switches[key]
-            if value is True:
+            if not value:
+                continue
+            elif value is True:
                 yield key
-            elif value:
+            elif key.startswith('--'):
                 yield '{}={}'.format(key, value)
+            else:
+                yield key + value
 
     def command(self, group_key):
         return list(itertools.chain(self.xargs_base,

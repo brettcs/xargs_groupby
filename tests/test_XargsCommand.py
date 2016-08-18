@@ -55,8 +55,10 @@ class XargsCommandTestCase(unittest.TestCase):
     def assertSwitchSet(self, command, switch_name, value=None):
         if value is None:
             needle = switch_name
-        else:
+        elif switch_name.startswith('--'):
             needle = '{}={}'.format(switch_name, value)
+        else:
+            needle = switch_name + value
         self.assertIn(needle, self.xargs_part(command))
 
     def assertSwitchUnset(self, command, switch_name):
