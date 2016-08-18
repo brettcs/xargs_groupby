@@ -19,6 +19,10 @@ class InputPrepperTestCase(unittest.TestCase):
     def InputPrepper(self, key_func=lambda x: x, delimiter=None, encoding=ENCODING):
         return xg.InputPrepper(key_func, delimiter, encoding)
 
+    def assertPrepperHasExactly(self, prepper, expected):
+        actual = {key: prepper[key] for key in prepper}
+        self.assertEqual(actual, expected)
+
     def test_varied_groupings(self):
         prepper = self.InputPrepper(methodcaller('lower'))
         # A few important properties about the argument list:
@@ -28,14 +32,16 @@ class InputPrepperTestCase(unittest.TestCase):
         #     lowercase first for the 'a' group,
         #     but uppercase first for the 'aa' group.
         prepper.add(['a', 'AA', 'aA', 'Z', 'A', 'aa', 'Aa'])
-        self.assertEqual(prepper.groups(), {'a': [b'a', b'A'],
-                                            'aa': [b'AA', b'aA', b'aa', b'Aa'],
-                                            'z': [b'Z']})
+        self.assertPrepperHasExactly(prepper, {
+            'a': [b'a', b'A'],
+            'aa': [b'AA', b'aA', b'aa', b'Aa'],
+            'z': [b'Z'],
+        })
 
     def test_all_one_group(self):
         prepper = self.InputPrepper(len)
         prepper.add('abcde')
-        self.assertEqual(prepper.groups(), {1: [b'a', b'b', b'c', b'd', b'e']})
+        self.assertPrepperHasExactly(prepper, {1: [b'a', b'b', b'c', b'd', b'e']})
 
     def test_uses_1byte_delimiter(self, delimiter='\0', expected='\\000'):
         prepper = self.InputPrepper(delimiter=delimiter)

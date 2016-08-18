@@ -410,6 +410,12 @@ class InputPrepper(object):
             self._delimiter_finder = self.DelimiterFinder()
         self._groups = collections.defaultdict(list)
 
+    def __iter__(self):
+        return iter(self._groups)
+
+    def __getitem__(self, key):
+        return self._groups[key]
+
     def add(self, arg_seq):
         for arg in arg_seq:
             key = self.group_func(arg)
@@ -417,9 +423,6 @@ class InputPrepper(object):
             if self._delimiter is None:
                 self._delimiter_finder.exclude(arg_bytes)
             self._groups[key].append(arg_bytes)
-
-    def groups(self):
-        return self._groups
 
     def delimiter(self, group_key=NO_GROUP_KEY):
         if self._delimiter is not None:
