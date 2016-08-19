@@ -372,28 +372,15 @@ class InputPrepper(object):
                 self.eligible = set(chr(n) for n in xrange(256))
             else:
                 self.eligible = set(bytes(range(256)))
-            self.last_used = None
-            self.last_result = None
 
         def exclude(self, bytes_arg):
             self.eligible.difference_update(bytes_arg)
 
-        @staticmethod
-        def escape(byte):
-            try:
-                byte = ord(byte)
-            except TypeError:  # A single byte is an int in Py3.
-                pass
-            return '\\{:03o}'.format(byte)
-
         def delimiter(self):
-            if self.last_used not in self.eligible:
-                try:
-                    self.last_used = next(iter(self.eligible))
-                except StopIteration:
-                    raise ValueError("no possible delimiter - input covers all bytes")
-                self.last_result = self.escape(self.last_used)
-            return self.last_result
+            try:
+                return next(iter(self.eligible))
+            except StopIteration:
+                raise ValueError("no possible delimiter - input covers all bytes")
 
 
     def __init__(self, group_func, delimiter=None, encoding=ENCODING):
@@ -404,7 +391,7 @@ class InputPrepper(object):
         except (AttributeError, UnicodeEncodeError):
             delimiter_b = b''
         if len(delimiter_b) == 1:
-            self._delimiter = self.DelimiterFinder.escape(delimiter_b[0])
+            self._delimiter = delimiter_b[0]
         else:
             self._delimiter = None
             self._delimiter_finder = self.DelimiterFinder()
@@ -488,6 +475,13 @@ class XargsCommand(object):
         if groups_count > 0:
             max_procs = max(1, cores_count // groups_count)
             self.switches['--max-procs'] = unicode(max_procs)
+
+    def set_delimiter(self, byte):
+        try:
+            byte = ord(byte)
+        except TypeError:  # A single byte is an int in Py3.
+            pass
+        self.switches['--delimiter'] = '\\{:03o}'.format(byte)
 
 
 class ProcessWriter(object):

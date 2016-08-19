@@ -18,7 +18,7 @@ class XargsCommandTestCase(unittest.TestCase):
         self.subcommand_arg0 = 'echo'
         self.subcommand = mock.MagicMock(name='group_cmd', spec_set=xg.GroupCommand)
         self.subcommand.command.side_effect = lambda key: [self.subcommand_arg0, key]
-        self.xargs = xg.XargsCommand(['xargs', '-0'], self.subcommand)
+        self.xargs = xg.XargsCommand(['xargs'], self.subcommand)
 
     def test_base_command_copies(self):
         xargs_base = ['xargs', '-0']
@@ -121,3 +121,13 @@ class XargsCommandTestCase(unittest.TestCase):
     def test_set_parallel_handles_zero_groups(self):
         self.xargs.set_parallel(2, 0)
         self.test_default_procs()
+
+    def test_set_delimiter(self, delimiter=b'\0', expected='\\000'):
+        self.xargs.set_delimiter(delimiter[0])
+        self.assertSwitchSet(self.xargs.command('key'), '--delimiter', expected)
+
+    def test_set_delimiter_whitespace(self):
+        self.test_set_delimiter(b'\t', '\\011')
+
+    def test_set_delimiter_character(self):
+        self.test_set_delimiter(b'A', '\\101')

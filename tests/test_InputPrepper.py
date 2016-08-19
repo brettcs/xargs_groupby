@@ -14,7 +14,8 @@ import xargs_groupby as xg
 
 class InputPrepperTestCase(unittest.TestCase):
     ENCODING = 'latin-1'
-    USABLE_DELIMITERS = bytearray(range(256)).decode(ENCODING)
+    USABLE_DELIMITER_BYTES = bytes(bytearray(range(256)))
+    USABLE_DELIMITERS = USABLE_DELIMITER_BYTES.decode(ENCODING)
 
     def InputPrepper(self, key_func=lambda x: x, delimiter=None, encoding=ENCODING):
         return xg.InputPrepper(key_func, delimiter, encoding)
@@ -43,12 +44,12 @@ class InputPrepperTestCase(unittest.TestCase):
         prepper.add('abcde')
         self.assertPrepperHasExactly(prepper, {1: [b'a', b'b', b'c', b'd', b'e']})
 
-    def test_uses_1byte_delimiter(self, delimiter='\0', expected='\\000'):
+    def test_uses_1byte_delimiter(self, delimiter='\0', expected=b'\0'[0]):
         prepper = self.InputPrepper(delimiter=delimiter)
         self.assertEqual(prepper.delimiter(), expected)
 
     def test_uses_1byte_delimiter_with_high_bit(self):
-        self.test_uses_1byte_delimiter('ä', '\\344')
+        self.test_uses_1byte_delimiter('ä', 'ä'.encode(self.ENCODING)[0])
 
     def test_bad_delimiter_refused(self, delimiter='\0\0', *keys):
         prepper = self.InputPrepper(delimiter=delimiter)
@@ -68,7 +69,7 @@ class InputPrepperTestCase(unittest.TestCase):
     def test_finds_usable_delimiter(self):
         prepper = self.InputPrepper()
         prepper.add([self.USABLE_DELIMITERS[:-1]])
-        self.assertEqual(prepper.delimiter(), '\\377')
+        self.assertEqual(prepper.delimiter(), bytes(self.USABLE_DELIMITER_BYTES)[-1])
 
     def test_finds_delimiter_per_group(self):
         width = 128
@@ -77,7 +78,5 @@ class InputPrepperTestCase(unittest.TestCase):
         prepper.add(inputs + [self.USABLE_DELIMITERS])
         for index, key in enumerate(inputs):
             delimiter = prepper.delimiter(key)
-            self.assertEqual(delimiter[0], '\\')
-            delim_char = int(delimiter[1:], 8)
-            start_char = width * index
-            self.assertNotIn(delim_char, range(start_char, start_char + width))
+            bad_range = self.USABLE_DELIMITER_BYTES[width * index:width * (index + 1)]
+            self.assertNotIn(delimiter, bad_range)
