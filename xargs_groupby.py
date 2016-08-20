@@ -403,6 +403,9 @@ class InputPrepper(object):
     def __getitem__(self, key):
         return self._groups[key]
 
+    def __len__(self):
+        return len(self._groups)
+
     def add(self, arg_seq):
         for arg in arg_seq:
             key = self.group_func(arg)

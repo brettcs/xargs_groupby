@@ -8,7 +8,7 @@ from __future__ import unicode_literals
 
 import unittest
 
-from operator import methodcaller
+from operator import itemgetter, methodcaller
 
 import xargs_groupby as xg
 
@@ -43,6 +43,17 @@ class InputPrepperTestCase(unittest.TestCase):
         prepper = self.InputPrepper(len)
         prepper.add('abcde')
         self.assertPrepperHasExactly(prepper, {1: [b'a', b'b', b'c', b'd', b'e']})
+
+    def test_len(self, seq='', expected=0):
+        prepper = self.InputPrepper(itemgetter(0))
+        prepper.add(seq)
+        self.assertEqual(len(prepper), expected)
+
+    def test_len_one(self):
+        self.test_len('aa', 1)
+
+    def test_len_many(self):
+        self.test_len('abbcca', 3)
 
     def test_uses_1byte_delimiter(self, delimiter='\0', expected=b'\0'[0]):
         prepper = self.InputPrepper(delimiter=delimiter)
