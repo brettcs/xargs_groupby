@@ -387,12 +387,11 @@ class InputPrepper(object):
 
         def exclude(self, bytes_arg):
             self.eligible.difference_update(bytes_arg)
+            if not self.eligible:
+                raise UserArgumentsError("group arguments use all bytes - no possible delimiter")
 
         def delimiter(self):
-            try:
-                return next(iter(self.eligible))
-            except StopIteration:
-                raise UserArgumentsError("group arguments use all bytes - no possible delimiter")
+            return next(iter(self.eligible))
 
 
     def __init__(self, group_func, delimiter=None, encoding=ENCODING):
@@ -422,24 +421,29 @@ class InputPrepper(object):
         for arg in arg_seq:
             key = self.group_func(arg)
             arg_bytes = arg.encode(self.encoding)
+            self[key].append(arg_bytes)
             if self._delimiter is None:
-                self._delimiter_finder.exclude(arg_bytes)
-            self._groups[key].append(arg_bytes)
+                try:
+                    self._delimiter_finder.exclude(arg_bytes)
+                except UserArgumentsError:
+                    self._groups_delimiter_finders = collections.defaultdict(self.DelimiterFinder)
+                    for group_key in self:
+                        for group_bytes in self[group_key]:
+                            self._groups_delimiter_finders[group_key].exclude(group_bytes)
+                    self._delimiter_finder = None
+                except AttributeError:
+                    self._groups_delimiter_finders[key].exclude(arg_bytes)
 
     def delimiter(self, group_key=NO_GROUP_KEY):
         if self._delimiter is not None:
-            return self._delimiter
-        try:
-            return self._delimiter_finder.delimiter()
-        except ValueError:
-            if group_key is self.NO_GROUP_KEY:
-                raise
-        if group_key not in self._groups:
-            raise KeyError(group_key)
-        finder = self.DelimiterFinder()
-        for byte_arg in self._groups[group_key]:
-            finder.exclude(byte_arg)
-        return finder.delimiter()
+            delimiter = self._delimiter
+        elif self._delimiter_finder is not None:
+            delimiter = self._delimiter_finder.delimiter()
+        elif group_key is self.NO_GROUP_KEY:
+            raise ValueError("no usable delimiter for all groups")
+        else:
+            delimiter = self._groups_delimiter_finders[group_key].delimiter()
+        return delimiter
 
 
 class GroupCommand(object):

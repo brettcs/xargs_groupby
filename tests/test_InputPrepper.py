@@ -64,9 +64,9 @@ class InputPrepperTestCase(unittest.TestCase):
 
     def test_bad_delimiter_refused(self, delimiter='\0\0', *keys):
         prepper = self.InputPrepper(delimiter=delimiter)
-        prepper.add([self.USABLE_DELIMITERS])
-        with self.assertRaises(xg.UserArgumentsError):
-            prepper.delimiter(*keys)
+        actual = prepper.delimiter()
+        self.assertNotEqual(actual, delimiter)
+        self.assertIn(actual, self.USABLE_DELIMITER_BYTES)
 
     def test_unencodable_delimiter_refused(self):
         self.test_bad_delimiter_refused('♥')
@@ -74,8 +74,10 @@ class InputPrepperTestCase(unittest.TestCase):
     def test_no_delimiter_found_when_input_covers_all_bytes(self):
         self.test_bad_delimiter_refused(None)
 
-    def test_no_delimiter_found_when_group_covers_all_bytes(self):
-        self.test_bad_delimiter_refused(None, self.USABLE_DELIMITERS)
+    def test_error_when_group_covers_all_bytes(self):
+        prepper = self.InputPrepper(delimiter=None)
+        with self.assertRaises(xg.UserArgumentsError):
+            prepper.add([self.USABLE_DELIMITERS])
 
     def test_finds_usable_delimiter(self):
         prepper = self.InputPrepper()
@@ -86,7 +88,7 @@ class InputPrepperTestCase(unittest.TestCase):
         width = 128
         inputs = [self.USABLE_DELIMITERS[:width], self.USABLE_DELIMITERS[width:]]
         prepper = self.InputPrepper()
-        prepper.add(inputs + [self.USABLE_DELIMITERS])
+        prepper.add(inputs)
         for index, key in enumerate(inputs):
             delimiter = prepper.delimiter(key)
             bad_range = self.USABLE_DELIMITER_BYTES[width * index:width * (index + 1)]
