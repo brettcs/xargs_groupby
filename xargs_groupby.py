@@ -705,9 +705,10 @@ class ArgumentParser(argparse.ArgumentParser):
         xargs_opts.add_argument(
             '-I', '--replace', '-i', dest='I', metavar='STR',
             help="Replace this string in the command with arguments")
-        xargs_opts.add_argument(
-            '--interactive', '-p', action='store_true',
-            help="Prompt user before running commands")
+        # TODO: Support this if possible.
+        # xargs_opts.add_argument(
+        #     '--interactive', '-p', action='store_true',
+        #     help="Prompt user before running commands")
         xargs_opts.add_argument(
             '--max-args', '-n', metavar='NUM',
             help="Maximum number of arguments per command line")
