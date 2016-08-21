@@ -743,6 +743,12 @@ class ArgumentParser(argparse.ArgumentParser):
             '--null', '-0',
             dest='delimiter', action='store_const', const=r'\0',
             help="Use the null character as the delimiter")
+        self.add_argument(
+            '--group-str', '-G', metavar='STR',
+            help="Replace this string in commands with the group key")
+        self.add_argument(
+            '--max-procs', '-P', metavar='NUM', type=int, default=1,
+            help="Maximum number of processes to run at once")
         self.add_command_argument(
             '--preexec', '--pre',
             help="Command to run per group before the main command, terminated with ';'")
