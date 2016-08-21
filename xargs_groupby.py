@@ -731,7 +731,7 @@ class ArgumentParser(argparse.ArgumentParser):
             help="Read arguments from file instead of stdin")
         self.add_argument(
             '--encoding', default=ENCODING,
-            help="Encoding for all I/O")
+            help="Encoding for all I/O (specify a name Python uses)")
         delim_group = self.add_mutually_exclusive_group()
         delim_group.add_argument(
             '--delimiter', '-d', metavar='STR',
