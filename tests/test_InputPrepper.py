@@ -65,7 +65,7 @@ class InputPrepperTestCase(unittest.TestCase):
     def test_bad_delimiter_refused(self, delimiter='\0\0', *keys):
         prepper = self.InputPrepper(delimiter=delimiter)
         prepper.add([self.USABLE_DELIMITERS])
-        with self.assertRaises(ValueError):
+        with self.assertRaises(xg.UserArgumentsError):
             prepper.delimiter(*keys)
 
     def test_unencodable_delimiter_refused(self):

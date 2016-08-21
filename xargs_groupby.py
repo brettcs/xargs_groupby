@@ -51,6 +51,18 @@ except NameError:
 ENCODING = locale.getpreferredencoding()
 PY_MAJVER = sys.version_info.major
 
+class UserInputError(ValueError):
+    pass
+
+
+class UserArgumentsError(UserInputError):
+    pass
+
+
+class UserExpressionError(UserInputError):
+    pass
+
+
 class InputShlexer(object):
     SHLEX_CODING = 'iso-8859-1'
 
@@ -299,7 +311,7 @@ class UserExpression(object):
         try:
             parsed_ast = ast.parse(expr_s, self.SOURCE, 'eval')
         except SyntaxError as error:
-            raise ValueError(*error.args)
+            raise UserExpressionError(*error.args)
         name_checker = NameChecker(self._EVAL_VARS)
         _, unloaded_names = name_checker.check(parsed_ast)
         unknown_names = set()
@@ -310,11 +322,11 @@ class UserExpression(object):
                 unknown_names.add(name)
         unknown_names_count = len(unknown_names)
         if unknown_names_count > 1:
-            raise ValueError("names {} are not defined".format(
+            raise UserExpressionError("names {} are not defined".format(
                 ", ".join(repr(name) for name in unknown_names)))
         elif unknown_names_count == 1:
             unknown_name = unknown_names.pop()
-            name_error = ValueError("name {!r} is not defined".format(unknown_name))
+            name_error = UserExpressionError("name {!r} is not defined".format(unknown_name))
             # If the name refers to a module that isn't in _EVAL_VARS,
             # always treat it as an error, rather than overloading the name.
             try:
@@ -334,7 +346,7 @@ class UserExpression(object):
                     'lambda {}: {}'.format(unknown_name, expr_s),
                     self.SOURCE, 'eval')
             except IndexError:
-                raise ValueError("callable expression accepts no argument")
+                raise UserExpressionError("callable expression accepts no argument")
             else:
                 try:
                     arg_name = arg_node.arg
@@ -346,9 +358,9 @@ class UserExpression(object):
         try:
             self.func = eval(expr_code, self._EVAL_VARS)
         except AttributeError as error:
-            raise ValueError(*error.args)
+            raise UserExpressionError(*error.args)
         if not callable(self.func):
-            raise ValueError("{!r} expression is not callable".
+            raise UserExpressionError("{!r} expression is not callable".
                              format(type(self.func)))
 
     def __call__(self, arg):
@@ -380,7 +392,7 @@ class InputPrepper(object):
             try:
                 return next(iter(self.eligible))
             except StopIteration:
-                raise ValueError("no possible delimiter - input covers all bytes")
+                raise UserArgumentsError("group arguments use all bytes - no possible delimiter")
 
 
     def __init__(self, group_func, delimiter=None, encoding=ENCODING):

@@ -51,11 +51,11 @@ class UserExpressionTestCase(unittest.TestCase):
         self.assertEqual(expr('t'), 'ttt')
 
     def test_arbitrary_shortcut_fails_inside_lambda(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(xg.UserExpressionError):
             xg.UserExpression('lambda _: anything')
 
     def test_two_arbitrary_names_fail(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(xg.UserExpressionError):
             xg.UserExpression('_ * anything')
 
     def test_builtin_usable(self):
@@ -67,7 +67,7 @@ class UserExpressionTestCase(unittest.TestCase):
         self.assertEqual(expr(os.path.join('dir', 'test')), 'test')
 
     def test_syntax_error(self, expr_s='lambda s:'):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(xg.UserExpressionError):
             xg.UserExpression(expr_s)
 
     def test_not_callable(self):
@@ -107,10 +107,10 @@ class UserExpressionTestCase(unittest.TestCase):
             expr_s = '{}(_)'.format(name)
             try:
                 xg.UserExpression(expr_s)
-            except ValueError:
+            except xg.UserExpressionError:
                 pass
             else:
-                self.fail("expression {!r} did not raise ValueError".
+                self.fail("expression {!r} did not raise xg.UserExpressionError".
                           format(expr_s))
 
     def empty_tar_expr(self, append=''):
