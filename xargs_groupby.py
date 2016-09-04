@@ -703,7 +703,7 @@ class ArgumentParser(argparse.ArgumentParser):
             '--exit', '-x', action='store_true',
             help="Exit if a command exceeds --max-chars")
         xargs_opts.add_argument(
-            '-I', '--replace', '-i', dest='I', metavar='STR',
+            '-I', '--replace-str', dest='I', metavar='STR',
             help="Replace this string in the command with arguments")
         # TODO: Support this if possible.
         # xargs_opts.add_argument(
@@ -737,7 +737,7 @@ class ArgumentParser(argparse.ArgumentParser):
             '--delimiter', '-d', metavar='STR',
             help="Separator string for arguments")
         delim_group.add_argument(
-            '--eof-str', '--eof', '-E', metavar='EOF',
+            '--eof-str', '-E', metavar='EOF',
             help="Stop reading input at a line with this string")
         delim_group.add_argument(
             '--null', '-0',
