@@ -819,3 +819,87 @@ class ArgumentParser(argparse.ArgumentParser):
         if args.delimiter is not None:
             args.delimiter = self._parse_escapes(args.delimiter)
         return args, xargs_opts
+
+
+class Program(object):
+    def __init__(self, args, xargs_opts):
+        self.args = args
+        self.xargs_opts = xargs_opts
+
+    @classmethod
+    def from_arglist(cls, arglist, parser_class=ArgumentParser):
+        parser = parser_class()
+        args, xargs_opts = parser.parse_args(arglist)
+        return cls(args, xargs_opts)
+
+    def group_function(self, constructor=UserExpression):
+        return constructor(self.args.group_code)
+
+    def input_file(self, open_func=io.open):
+        source = sys.stdin.fileno() if (self.args.arg_file is None) else self.args.arg_file
+        return open_func(source, encoding=self.args.encoding)
+
+    def input_parser(self, input_file, shlexer=InputShlexer, splitter=InputSplitter):
+        if self.args.delimiter is None:
+            return shlexer(input_file, self.args.eof_str)
+        else:
+            return splitter(input_file, self.args.delimiter)
+
+    def prep_input(self, group_func, input_seq, new_prepper=InputPrepper):
+        prepper = new_prepper(group_func, self.args.delimiter, self.args.encoding)
+        prepper.add(input_seq)
+        return prepper
+
+    def command_templates(self, group_cmd=GroupCommand, xargs_cmd=XargsCommand):
+        templates = []
+        if self.args.preexec is not None:
+            templates.append(group_cmd(self.args.preexec, self.args.group_str))
+        xargs_subcmd = group_cmd(self.args.command, self.args.group_str)
+        xargs_template = xargs_cmd(['xargs'], xargs_subcmd)
+        xargs_template.set_options(self.xargs_opts)
+        templates.append(xargs_template)
+        return templates
+
+    def pipeline_sources(self, cmd_templates, input_prepper, group_key):
+        last_index = len(cmd_templates) - 1
+        for index, cmd_src in enumerate(cmd_templates):
+            if index == last_index:
+                input_seq = input_prepper[group_key]
+                delimiter = input_prepper.delimiter(group_key)
+                cmd_src.set_delimiter(delimiter)
+            else:
+                input_seq = ()
+                delimiter = None
+            yield cmd_src.command(group_key), input_seq, delimiter
+
+    def iter_pipelines(self, cmd_templates, input_prepper,
+                       source_func=None, pipeline_class=ProcessPipeline):
+        if source_func is None:
+            source_func = self.pipeline_sources
+        cmd_templates[-1].set_parallel(self.args.max_procs, len(input_prepper))
+        for group_key in input_prepper:
+            yield pipeline_class(source_func(cmd_templates, input_prepper, group_key))
+
+    def main(self, runner_class=PipelineRunner):
+        group_func = self.group_function()
+        input_file = self.input_file()
+        parser = self.input_parser(input_file)
+        input_prepper = self.prep_input(group_func, parser)
+        cmd_templates = self.command_templates()
+        pipelines_src = self.iter_pipelines(cmd_templates, input_prepper)
+        pipeline_runner = runner_class(self.args.max_procs)
+        pipeline_runner.run(pipelines_src)
+        failures_count = pipeline_runner.failures_count()
+        if not failures_count:
+            exitcode = 0
+        else:
+            exitcode = min(10 + failures_count, 99)
+        return exitcode
+
+
+def main(arglist, program_class=Program):
+    program = program_class.from_arglist(arglist)
+    return program.main()
+
+if __name__ == '__main__':
+    exit(main(sys.argv[1:]))
