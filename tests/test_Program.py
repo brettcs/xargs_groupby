@@ -225,7 +225,7 @@ class ProgramTestCase(unittest.TestCase):
         self.test_main_exitcode(8, 4, 14)
 
     def test_main_exitcode_with_all_failures(self):
-        self.test_main_exitcode(9, 9, 19)
+        self.test_main_exitcode(9, 9, 100)
 
     def test_main_exitcode_with_many_failures(self):
         self.test_main_exitcode(1000, 999, 99)

@@ -892,6 +892,8 @@ class Program(object):
         failures_count = pipeline_runner.failures_count()
         if not failures_count:
             exitcode = 0
+        elif failures_count == pipeline_runner.run_count():
+            exitcode = 100
         else:
             exitcode = min(10 + failures_count, 99)
         return exitcode

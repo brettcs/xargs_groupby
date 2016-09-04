@@ -44,7 +44,7 @@ def run_and_check(cmd, ok_exitcodes=ZERO_SET):
 runnable_tools = {
     'xargs': run_and_check(['xargs', '--version']),
     'echo': run_and_check(['echo', '--version']),
-    'false': run_and_check(['false'], [1])
+    'test': run_and_check(['test', 'string'])
 }
 
 @unittest.skipUnless(TEST_FLAGS.want_integration,
@@ -157,10 +157,10 @@ class IntegrationTestCase(unittest.TestCase):
             "bb in B",
         )
 
-    @require_tools('false')
+    @require_tools('test')
     def test_failures(self):
         self.run_xg(
-            ['argument', 'false'],
+            ['argument', 'test', 'B', '='],
             "A B A C",
-            [13],
+            [12],
         )
