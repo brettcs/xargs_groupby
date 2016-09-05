@@ -153,6 +153,8 @@ and send the full output as a bug report.  Thanks in advance!
         else:
             exitcode = 1
         exit(exitcode)
+if __name__ == '__main__':
+    sys.excepthook = ExceptHook.with_sys_stderr()
 
 
 class InputShlexer(object):
@@ -819,6 +821,9 @@ class ArgumentParser(argparse.ArgumentParser):
             '--version', action=VersionAction, nargs=0,
             help="Display version and license information")
         self.add_argument(
+            '--debug', action='store_true',
+            help="Display debugging details about errors")
+        self.add_argument(
             '--arg-file', '-a', metavar='FILE',
             help="Read arguments from file instead of stdin")
         self.add_argument(
@@ -991,8 +996,16 @@ class Program(object):
         return exitcode
 
 
-def main(arglist, program_class=Program):
+def main(arglist, program_class=Program, excepthook_class=ExceptHook):
+    """Run xargs_groupby as a script.
+
+    This function expects xargs_groupby is __main__, and changes the
+    global interpreter state.  For example, it installs an excepthook.
+    If you don't want this, call Program.main() instead.
+    """
     program = program_class.from_arglist(arglist)
+    sys.excepthook = excepthook_class.with_sys_stderr(program.args.encoding)
+    sys.excepthook.show_tb = program.args.debug
     return program.main()
 
 if __name__ == '__main__':
