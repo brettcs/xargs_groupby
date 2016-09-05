@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>."""
 import argparse
 import ast
 import collections
+import contextlib
 import functools
 import imp
 import importlib
@@ -39,11 +40,6 @@ import subprocess
 import sys
 import traceback
 import warnings
-
-# Since this script stands alone, there's no need for relative imports.
-# Remove the script's directory from sys.path to avoid surprising or
-# dangerous behavior when importing for UserExpressions.
-del sys.path[0]
 
 try:
     unicode
@@ -312,6 +308,28 @@ class UserExpression(object):
         'zlib': MODULE_ALL,
     }
 
+    # Since xargs_groupby only depends on the stdlib, there's no need for
+    # relative imports.  Remove the script's directory from sys.path to
+    # avoid surprising or dangerous behavior when importing for
+    # UserExpressions.
+    CLEAN_SYS_PATH = list(sys.path)
+    _curdir = os.getcwd()
+    for index, path in enumerate(CLEAN_SYS_PATH):
+        if (path == '') or (path == _curdir):
+            del CLEAN_SYS_PATH[index]
+            break
+    del _curdir, index, path
+
+    @classmethod
+    @contextlib.contextmanager
+    def clean_sys_path(cls):
+        orig_sys_path = sys.path
+        sys.path = cls.CLEAN_SYS_PATH
+        try:
+            yield
+        finally:
+            sys.path = orig_sys_path
+
     def _build_whitelisted_module(module_name, names_whitelist):
         src_module = importlib.import_module(module_name)
         if names_whitelist is MODULE_ALL:
@@ -327,7 +345,8 @@ class UserExpression(object):
 
     def _load_whitelisted_module(self, module_name):
         names_whitelist = self.MODULE_WHITELIST[module_name]
-        new_module = self._build_whitelisted_module(module_name, names_whitelist)
+        with self.clean_sys_path():
+            new_module = self._build_whitelisted_module(module_name, names_whitelist)
         try:
             load_callback = getattr(self, '_{}_module_loaded'.format(module_name))
         except AttributeError:
