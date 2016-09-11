@@ -160,6 +160,16 @@ class ExceptHookTestCase(unittest.TestCase):
                           format(line))
         _locals['test_{}_show_traceback'.format(exc_type.__name__)] = show_traceback_test
 
+    def test_show_internal_traceback_nonstring_args(self):
+        bad_key = random.randint(10000, 99999)
+        exception = KeyError(bad_key)
+        stderr, excepthook = self.new_excepthook(show_tb=True)
+        self.assertExitFrom(exception, excepthook)
+        stderr.seek(0)
+        for line in stderr:
+            pass
+        self.assertEqual(line, "KeyError: {!r}\n".format(bad_key))
+
     def test_with_sys_stderr_default_encoding(self):
         excepthook = xg.ExceptHook.with_sys_stderr()
         stderr = excepthook.stderr

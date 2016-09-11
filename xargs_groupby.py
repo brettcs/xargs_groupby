@@ -72,23 +72,18 @@ class ExceptHook(object):
     def with_sys_stderr(cls, encoding=ENCODING):
         return cls(io.open(sys.stderr.fileno(), 'w', encoding=encoding, closefd=False))
 
-    if PY_MAJVER < 3:
-        def decode_if_needed(s):
-            if isinstance(s, unicode):
-                return s
-            else:
-                return s.decode(errors='replace')
-    else:
-        def decode_if_needed(s):
-            return s
-    decode_if_needed = staticmethod(decode_if_needed)
+    def stringify(self, obj):
+        if isinstance(obj, bytes):
+            return obj.decode(errors='replace')
+        else:
+            return unicode(obj)
 
     def _exception_message(self, exception):
         try:
-            message = self.decode_if_needed(exception.message)
+            message = self.stringify(exception.message)
         except AttributeError:
             try:
-                message = self.decode_if_needed(exception.args[0])
+                message = self.stringify(exception.args[0])
             except (AttributeError, IndexError):
                 message = unicode(exception)
         return message
@@ -112,8 +107,8 @@ class ExceptHook(object):
     def _report_environment_error(self, exception):
         yield "error"
         if exception.filename:
-            yield self.decode_if_needed(exception.filename)
-        yield self.decode_if_needed(exception.strerror)
+            yield self.stringify(exception.filename)
+        yield self.stringify(exception.strerror)
 
     @_write_to_stderr
     def _report_external_error(self, exception):
@@ -143,7 +138,7 @@ and send the full output as a bug report.  Thanks in advance!
         if self.show_tb:
             tb_output = traceback.format_exception(exc_type, exc_value, exc_tb)
             for s in tb_output:
-                self.stderr.write(self.decode_if_needed(s))
+                self.stderr.write(self.stringify(s))
         if issubclass(exc_type, UserInputError):
             exitcode = 3
         else:
