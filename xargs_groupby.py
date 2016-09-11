@@ -148,6 +148,24 @@ if __name__ == '__main__':
     sys.excepthook = ExceptHook.with_sys_stderr()
 
 
+class ExceptionWrapper(object):
+    def __init__(self, exc_source, *wrapped_types):
+        self.exc_source = exc_source
+        self.wrapped_types = wrapped_types
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        if isinstance(exc_value, self.wrapped_types):
+            if isinstance(self.exc_source, BaseException):
+                new_exception = self.exc_source
+            else:
+                new_exception = self.exc_source(*exc_value.args)
+            new_exception.__cause__ = exc_value
+            raise new_exception
+
+
 class InputShlexer(object):
     SHLEX_CODING = 'iso-8859-1'
 
