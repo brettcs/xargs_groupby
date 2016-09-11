@@ -7,16 +7,20 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import errno
+import importlib
 import io
 import itertools
 import os
 import random
+import re
 import signal
 import sys
 import unittest
 
 import xargs_groupby as xg
 from . import FOREIGN_ENCODING
+
+importlib.import_module(Exception.__module__)
 
 class ExceptHookTestCase(unittest.TestCase):
     INTERNAL_ERRORS = (
@@ -138,8 +142,22 @@ class ExceptHookTestCase(unittest.TestCase):
                 self.fail("did not find start of traceback in stderr")
             for line in stderr:
                 self.assertNotIn("`--debug`", line)
-            header, _ = line.split(None, 1)
-            self.assertTrue(header.endswith(exc_type.__name__ + ":"))
+            # Some classes like OSError can give you a different subtype based
+            # on their args.  This means searching the traceback string for
+            # the name of the exception type is an insufficient test.
+            match = re.match(r'([A-Za-z_][\w]*\.)*([A-Za-z_][\w]*):', line)
+            src_module = sys.modules[exc_type.__module__]
+            try:
+                tb_class = getattr(src_module, match.group(2))
+            # Note that AttributeError could come from None.group() or
+            # getattr itself.
+            except AttributeError:
+                ok = False
+            else:
+                ok = issubclass(tb_class, exc_type)
+            if not ok:
+                self.fail("last traceback line does not name exception type:\n{!r}".
+                          format(line))
         _locals['test_{}_show_traceback'.format(exc_type.__name__)] = show_traceback_test
 
     def test_with_sys_stderr_default_encoding(self):
