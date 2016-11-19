@@ -28,6 +28,7 @@ import contextlib
 import functools
 import imp
 import importlib
+import inspect
 import io
 import itertools
 import locale
@@ -61,34 +62,32 @@ class UserExpressionError(UserInputError):
     pass
 
 
-class ExceptHook(object):
-    EXTERNAL_ERRORS = (EnvironmentError, MemoryError, UserInputError)
-
-    def __init__(self, stderr):
-        self.stderr = stderr
-        self.show_tb = False
-
+class _ExceptHookHelper(object):
+    """Internal implementation helper for ExceptHook."""
+    # These methods support generating error-reporting methods in ExceptHook.
+    # They're collected here so it's easy for them to refer to each other,
+    # since they need to be able to do that and don't need any instance state.
+    # Every method here should be a classmethod.
     @classmethod
-    def with_sys_stderr(cls, encoding=ENCODING):
-        return cls(io.open(sys.stderr.fileno(), 'w', encoding=encoding, closefd=False))
-
-    def stringify(self, obj):
+    def stringify(cls, obj):
         if isinstance(obj, bytes):
             return obj.decode(errors='replace')
         else:
             return unicode(obj)
 
-    def _exception_message(self, exception):
+    @classmethod
+    def exception_message(cls, exception):
         try:
-            message = self.stringify(exception.message)
+            message = cls.stringify(exception.message)
         except AttributeError:
             try:
-                message = self.stringify(exception.args[0])
+                message = cls.stringify(exception.args[0])
             except (AttributeError, IndexError):
                 message = unicode(exception)
         return message
 
-    def _write_to_stderr(orig_func):
+    @classmethod
+    def write_to_stderr(cls, orig_func):
         @functools.wraps(orig_func)
         def write_to_stderr_wrapper(self, *args, **kwargs):
             sep = "xargs_groupby: "
@@ -103,22 +102,40 @@ class ExceptHook(object):
                 self.stderr.write("\n")
         return write_to_stderr_wrapper
 
-    @_write_to_stderr
-    def _report_environment_error(self, exception):
+    @classmethod
+    def write_message_with_prefix(cls, prefix_s):
+        @cls.write_to_stderr
+        def _report_func(self, exception):
+            yield prefix_s
+            yield cls.exception_message(exception)
+        return _report_func
+
+
+class ExceptHook(object):
+    def __init__(self, stderr):
+        self.stderr = stderr
+        self.show_tb = False
+
+    @classmethod
+    def with_sys_stderr(cls, encoding=ENCODING):
+        return cls(io.open(sys.stderr.fileno(), 'w', encoding=encoding, closefd=False))
+
+    @_ExceptHookHelper.write_to_stderr
+    def _report_OSError(self, exception):
         yield "error"
         if exception.filename:
-            yield self.stringify(exception.filename)
-        yield self.stringify(exception.strerror)
+            yield _ExceptHookHelper.stringify(exception.filename)
+        yield _ExceptHookHelper.stringify(exception.strerror)
 
-    @_write_to_stderr
-    def _report_external_error(self, exception):
-        yield "error"
-        yield self._exception_message(exception)
+    _report_EnvironmentError = _report_OSError
 
-    @_write_to_stderr
+    _report_UserInputError = _ExceptHookHelper.write_message_with_prefix("error")
+    _report_MemoryError = _report_UserInputError
+
+    @_ExceptHookHelper.write_to_stderr
     def _report_internal_error(self, exception):
         yield "internal " + type(exception).__name__
-        yield self._exception_message(exception)
+        yield _ExceptHookHelper.exception_message(exception)
         if not self.show_tb:
             yield """
 This is probably a bug in xargs_groupby.
@@ -129,16 +146,20 @@ and send the full output as a bug report.  Thanks in advance!
     def __call__(self, exc_type, exc_value, exc_tb):
         if issubclass(exc_type, KeyboardInterrupt):
             exit(-signal.SIGINT)
-        if issubclass(exc_type, EnvironmentError):
-            self._report_environment_error(exc_value)
-        elif issubclass(exc_type, self.EXTERNAL_ERRORS):
-            self._report_external_error(exc_value)
+        for exc_class in inspect.getmro(exc_type):
+            try:
+                report_func = getattr(self, '_report_' + exc_class.__name__)
+            except AttributeError:
+                pass
+            else:
+                break
         else:
-            self._report_internal_error(exc_value)
+            report_func = self._report_internal_error
+        report_func(exc_value)
         if self.show_tb:
             tb_output = traceback.format_exception(exc_type, exc_value, exc_tb)
             for s in tb_output:
-                self.stderr.write(self.stringify(s))
+                self.stderr.write(_ExceptHookHelper.stringify(s))
         if issubclass(exc_type, UserInputError):
             exitcode = 3
         else:
