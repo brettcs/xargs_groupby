@@ -1,3 +1,8 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
 import argparse
 import multiprocessing
 import os
@@ -14,12 +19,6 @@ else:
     FOREIGN_ENCODING = 'utf-8'
 
 PY_MAJVER = sys.version_info.major
-
-class NoopMock(mock.NonCallableMock):
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault('spec_set', object)
-        return super(NoopMock, self).__init__(*args, **kwargs)
-
 
 class TestFlags(argparse.Namespace):
     FLAG_SETTERS = frozenset(['1', 'true', 'y', 'yes'])

@@ -13,7 +13,8 @@ import unittest
 from argparse import Namespace
 
 import xargs_groupby as xg
-from . import mock, NoopMock
+from . import mock
+from .helpers import NoopMock
 
 class ProgramTestCase(unittest.TestCase):
     def program_from_args(self, **opts):

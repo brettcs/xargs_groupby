@@ -9,7 +9,8 @@ from __future__ import unicode_literals
 import unittest
 
 import xargs_groupby as xg
-from . import mock, NoopMock
+from . import mock
+from .helpers import NoopMock
 
 class MainTestCase(unittest.TestCase):
     def test_main_connections(self):
