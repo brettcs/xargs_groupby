@@ -11,8 +11,9 @@ import unittest
 
 import xargs_groupby as xg
 from . import mock, FOREIGN_ENCODING, PY_MAJVER
+from .helpers import ExitTestHelper
 
-class ArgumentParserTestCase(unittest.TestCase):
+class ArgumentParserTestCase(unittest.TestCase, ExitTestHelper):
     ARGV_ENCODING = 'utf-8'
 
     def setUp(self):
@@ -58,10 +59,8 @@ class ArgumentParserTestCase(unittest.TestCase):
         self.test_preexec(['mkdir', '--', '{}'])
 
     def assertParseError(self, arglist):
-        with mock.patch('sys.stderr', io.StringIO()), \
-             self.assertRaises(SystemExit) as exc_test:
+        with mock.patch('sys.stderr', io.StringIO()), self.assertExits(2):
             xg.ArgumentParser().parse_args(arglist)
-        self.assertEqual(exc_test.exception.code, 2)
 
     def test_unterminated_preexec(self):
         arglist = self.build_arglist(['--pre', 'foo', '-bar', '_', 'echo'])

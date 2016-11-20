@@ -17,6 +17,15 @@ class ExceptionWrapperTestHelper(object):
         self.assertIsInstance(exc_check.exception.__cause__, wrapped_class)
 
 
+class ExitTestHelper(object):
+    @contextlib.contextmanager
+    def assertExits(self, *exit_codes):
+        with self.assertRaises(SystemExit) as exc_check:
+            yield exc_check
+        if exit_codes:
+            self.assertIn(exc_check.exception.code, exit_codes)
+
+
 class NoopMock(mock.NonCallableMock):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault('spec_set', object)

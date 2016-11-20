@@ -20,10 +20,11 @@ import unittest
 
 import xargs_groupby as xg
 from . import FOREIGN_ENCODING
+from .helpers import ExitTestHelper
 
 importlib.import_module(Exception.__module__)
 
-class ExceptHookTestCase(unittest.TestCase):
+class ExceptHookTestCase(unittest.TestCase, ExitTestHelper):
     INTERNAL_ERRORS = (
         AttributeError,
         Exception,
@@ -67,12 +68,12 @@ class ExceptHookTestCase(unittest.TestCase):
         else:
             return exc_type(self.random_message())
 
-    def assertExitFrom(self, exception, excepthook):
+    def assertExitFrom(self, exception, excepthook, *exit_codes):
         try:
             raise exception
         except BaseException:
             exc_tb = sys.exc_info()[2]
-        with self.assertRaises(SystemExit) as exc_check:
+        with self.assertExits(*exit_codes) as exc_check:
             excepthook(type(exception), exception, exc_tb)
         return exc_check
 
@@ -90,8 +91,8 @@ class ExceptHookTestCase(unittest.TestCase):
         def error_code_test(self, exc_type=exc_type,
                             expect_exitcode=expected_exitcodes[exc_type]):
             _, excepthook = self.new_excepthook()
-            exc_check = self.assertExitFrom(self.new_error(exc_type), excepthook)
-            self.assertEqual(exc_check.exception.code, expect_exitcode)
+            exc_check = self.assertExitFrom(self.new_error(exc_type), excepthook,
+                                            expect_exitcode)
         _locals['test_{}_error_code'.format(exc_type.__name__)] = error_code_test
 
     def error_message_test(self, exception, *message_parts):
@@ -174,14 +175,16 @@ class ExceptHookTestCase(unittest.TestCase):
 
     def test_keyboard_interrupt_no_message(self):
         stderr, excepthook = self.new_excepthook(show_tb=True)
-        self.assertExitFrom(KeyboardInterrupt("no message test"), excepthook)
+        self.assertExitFrom(KeyboardInterrupt("no message test"), excepthook,
+                            -signal.SIGINT)
         self.assertEqual(stderr.tell(), 0)
 
     for exc_type in itertools.chain(INTERNAL_ERRORS, ENVIRONMENT_ERRORS, USER_ERRORS):
         def show_traceback_test(self, exc_type=exc_type):
             exception = self.new_error(exc_type)
             stderr, excepthook = self.new_excepthook(show_tb=True)
-            self.assertExitFrom(exception, excepthook)
+            expect_exitcode = 3 if (exc_type in self.USER_ERRORS) else 1
+            self.assertExitFrom(exception, excepthook, expect_exitcode)
             stderr.seek(0)
             for line in stderr:
                 self.assertNotIn("`--debug`", line)
@@ -213,7 +216,7 @@ class ExceptHookTestCase(unittest.TestCase):
         bad_key = random.randint(10000, 99999)
         exception = KeyError(bad_key)
         stderr, excepthook = self.new_excepthook(show_tb=True)
-        self.assertExitFrom(exception, excepthook)
+        self.assertExitFrom(exception, excepthook, 1)
         stderr.seek(0)
         for line in stderr:
             pass
