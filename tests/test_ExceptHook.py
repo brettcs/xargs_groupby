@@ -34,7 +34,7 @@ class ExceptHookTestCase(unittest.TestCase):
     )
     ENVIRONMENT_ERRORS = (IOError, OSError)
     USER_ERRORS = {
-        xg.UserArgumentsError: "error in input arguments",
+        xg.UserArgumentsError: "error reading input arguments",
         xg.UserCommandError: "error running {!r}",
         xg.UserExpressionCompileError: "error compiling group code {!r}",
         xg.UserExpressionRuntimeError: "group code raised an error on argument {!r}",
@@ -136,16 +136,41 @@ class ExceptHookTestCase(unittest.TestCase):
         _locals['test_{}_error_message_with_cause'.format(exc_type.__name__)] = (
             user_error_message_test_with_cause)
 
+    def check_environment_error_report(self, exception, *expected_message):
+        next_cause = exception
+        while next_cause:
+            root_cause = next_cause
+            try:
+                next_cause = root_cause.__cause__
+            except AttributeError:
+                next_cause = None
+        expected_message += (root_cause.strerror,)
+        stderr = self.error_message_test(exception, *expected_message)
+        self.assertEqual(stderr.read(), '')
+
     def test_environment_error_without_filename(self):
         exception = self.new_environment_error(IOError)
-        stderr = self.error_message_test(exception, "error", exception.strerror)
-        self.assertEqual(stderr.read(), '')
+        self.check_environment_error_report(exception, "error")
 
     def test_environment_error_with_filename(self):
         filename = self.random_message() + '.txt'
         exception = self.new_environment_error(OSError, None, None, filename)
-        stderr = self.error_message_test(exception, "error", filename, exception.strerror)
-        self.assertEqual(stderr.read(), '')
+        self.check_environment_error_report(exception, "error", filename)
+
+    def test_environment_error_without_filename_causing_user_error(self):
+        header = self.USER_ERRORS[xg.UserArgumentsError]
+        wrapper_msg = "wrapper test without filename"
+        exception = xg.UserArgumentsError(wrapper_msg)
+        exception.__cause__ = self.new_environment_error(IOError)
+        self.check_environment_error_report(exception, header, wrapper_msg)
+
+    def test_environment_error_with_filename_causing_user_error(self):
+        header = self.USER_ERRORS[xg.UserArgumentsError]
+        wrapper_msg = "wrapper test with filename"
+        exception = xg.UserArgumentsError(wrapper_msg)
+        filename = self.random_message() + '.arglist'
+        exception.__cause__ = self.new_environment_error(OSError, None, None, filename)
+        self.check_environment_error_report(exception, header, wrapper_msg, filename)
 
     def test_keyboard_interrupt_no_message(self):
         stderr, excepthook = self.new_excepthook(show_tb=True)

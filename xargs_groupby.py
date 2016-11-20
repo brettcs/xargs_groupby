@@ -76,69 +76,21 @@ class UserExpressionRuntimeError(UserExpressionError):
     pass
 
 
-class _ExceptHookHelper(object):
-    """Internal implementation helper for ExceptHook."""
-    # These methods support generating error-reporting methods in ExceptHook.
-    # They're collected here so it's easy for them to refer to each other,
-    # since they need to be able to do that and don't need any instance state.
-    # Every method here should be a classmethod.
-    @classmethod
-    def stringify(cls, obj):
-        if isinstance(obj, bytes):
-            return obj.decode(errors='replace')
-        else:
-            return unicode(obj)
-
-    @classmethod
-    def exception_message(cls, exception):
-        try:
-            message = cls.stringify(exception.message)
-        except AttributeError:
-            try:
-                message = cls.stringify(exception.args[0])
-            except (AttributeError, IndexError):
-                message = unicode(exception)
-        return message
-
-    @classmethod
-    def write_to_stderr(cls, orig_func):
-        @functools.wraps(orig_func)
-        def write_to_stderr_wrapper(self, *args, **kwargs):
-            sep = "xargs_groupby: "
-            for s in orig_func(self, *args, **kwargs):
-                if not s:
-                    continue
-                elif not s[0].isspace():
-                    self.stderr.write(sep)
-                    sep = ": "
-                self.stderr.write(s)
-            if not s.endswith('\n'):
-                self.stderr.write("\n")
-        return write_to_stderr_wrapper
-
-    @classmethod
-    def write_message_with_prefix(cls, prefix_s):
-        @cls.write_to_stderr
-        def _prefix_report_func(self, exception):
-            yield prefix_s
-            yield cls.exception_message(exception)
-            cause = getattr(exception, '__cause__', None)
-            if cause:
-                yield cls.exception_message(exception.__cause__)
-        return _prefix_report_func
-
-    @classmethod
-    def write_message_with_format(cls, fmt_s):
-        @cls.write_to_stderr
-        def _format_report_func(self, exception):
-            yield fmt_s.format(cls.exception_message(exception))
-            cause = getattr(exception, '__cause__', None)
-            if cause:
-                yield cls.exception_message(exception.__cause__)
-        return _format_report_func
-
-
 class ExceptHook(object):
+    HEADERS = {
+        EnvironmentError: "error",
+        MemoryError: "error",
+        OSError: "error",
+        UserInputError: None,
+    }
+
+    USER_ERROR_HEADERS = {
+        UserArgumentsError: "error reading input arguments",
+        UserCommandError: "error running {!r}",
+        UserExpressionCompileError: "error compiling group code {!r}",
+        UserExpressionRuntimeError: "group code raised an error on argument {!r}",
+    }
+
     def __init__(self, stderr):
         self.stderr = stderr
         self.show_tb = False
@@ -147,54 +99,95 @@ class ExceptHook(object):
     def with_sys_stderr(cls, encoding=ENCODING):
         return cls(io.open(sys.stderr.fileno(), 'w', encoding=encoding, closefd=False))
 
-    @_ExceptHookHelper.write_to_stderr
+    @staticmethod
+    def _stringify(obj):
+        if isinstance(obj, bytes):
+            return obj.decode(errors='replace')
+        else:
+            return unicode(obj)
+
+    def _exception_message(self, exception):
+        try:
+            message = self._stringify(exception.message)
+        except AttributeError:
+            try:
+                message = self._stringify(exception.args[0])
+            except (AttributeError, IndexError):
+                message = unicode(exception)
+        return message
+
     def _report_OSError(self, exception):
-        yield "error"
         if exception.filename:
-            yield _ExceptHookHelper.stringify(exception.filename)
-        yield _ExceptHookHelper.stringify(exception.strerror)
+            yield self._stringify(exception.filename)
+        yield self._stringify(exception.strerror)
 
     _report_EnvironmentError = _report_OSError
 
-    _report_UserInputError = _ExceptHookHelper.write_message_with_prefix("error")
-    _report_MemoryError = _report_UserInputError
-    _report_UserArgumentsError = _ExceptHookHelper.write_message_with_prefix(
-        "error in input arguments")
-    _report_UserCommandError = _ExceptHookHelper.write_message_with_format(
-        "error running {!r}")
-    _report_UserExpressionCompileError = _ExceptHookHelper.write_message_with_format(
-        "error compiling group code {!r}")
-    _report_UserExpressionRuntimeError = _ExceptHookHelper.write_message_with_format(
-        "group code raised an error on argument {!r}")
-
-    @_ExceptHookHelper.write_to_stderr
-    def _report_internal_error(self, exception):
-        yield "internal " + type(exception).__name__
-        yield _ExceptHookHelper.exception_message(exception)
-        if not self.show_tb:
-            yield """
-This is probably a bug in xargs_groupby.
-If you can, please rerun your command with the `--debug` option
-and send the full output as a bug report.  Thanks in advance!
-"""
-
-    def __call__(self, exc_type, exc_value, exc_tb):
-        if issubclass(exc_type, KeyboardInterrupt):
-            exit(-signal.SIGINT)
-        for exc_class in inspect.getmro(exc_type):
+    def _report_UserInputError(self, exception):
+        header_fmt = self._find_header_from(self.USER_ERROR_HEADERS, type(exception))
+        header = header_fmt.format(exception.args[0])
+        yield header
+        if header_fmt == header:
             try:
-                report_func = getattr(self, '_report_' + exc_class.__name__)
-            except AttributeError:
+                want_msg = exception.args[0] != exception.__cause__.args[0]
+            except (AttributeError, IndexError):
+                want_msg = exception.args
+            if want_msg:
+                yield self._exception_message(exception)
+
+    def _report_base_error(self, exception):
+        yield self._exception_message(exception)
+
+    def _find_handler(self, exc_root, get_func, fail_errors, default):
+        for exc_class in inspect.getmro(exc_root):
+            try:
+                handler = get_func(exc_class)
+            except fail_errors:
                 pass
             else:
                 break
         else:
-            report_func = self._report_internal_error
-        report_func(exc_value)
+            handler = default
+        return handler
+
+    def _get_report_func(self, exc_class):
+        return getattr(self, '_report_' + exc_class.__name__)
+
+    def _find_report_func(self, exc_root):
+        return self._find_handler(exc_root, self._get_report_func,
+                                  (AttributeError,), self._report_base_error)
+
+    def _find_header_from(self, header_dict, exc_root):
+        return self._find_handler(exc_root, header_dict.__getitem__, (KeyError,),
+                                  "internal " + exc_root.__name__)
+
+    def __call__(self, exc_type, exc_value, exc_tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            exit(-signal.SIGINT)
+        self.stderr.write("xargs_groupby")
+        header = self._find_header_from(self.HEADERS, exc_type)
+        if header:
+            self.stderr.write(": ")
+            self.stderr.write(header)
+        exception_type = exc_type
+        exception = exc_value
+        while exception:
+            report_func = self._find_report_func(exception_type)
+            for message in report_func(exception):
+                self.stderr.write(": ")
+                self.stderr.write(message)
+            exception = getattr(exception, '__cause__', None)
+            exception_type = type(exception)
+        self.stderr.write("\n")
         if self.show_tb:
             tb_output = traceback.format_exception(exc_type, exc_value, exc_tb)
             for s in tb_output:
-                self.stderr.write(_ExceptHookHelper.stringify(s))
+                self.stderr.write(self._stringify(s))
+        elif header and header.startswith('internal '):
+            self.stderr.write("""This is probably a bug in xargs_groupby.
+If you can, please rerun your command with the `--debug` option
+and send the full output as a bug report.  Thanks in advance!
+""")
         if issubclass(exc_type, UserInputError):
             exitcode = 3
         else:
