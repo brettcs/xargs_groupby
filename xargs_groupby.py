@@ -215,6 +215,24 @@ class ExceptionWrapper(object):
             raise new_exception
 
 
+class SignalBroadcaster(object):
+    def __init__(self):
+        self.processes = set()
+
+    def add(self, process):
+        self.processes.add(process)
+
+    def remove(self, process):
+        self.processes.remove(process)
+
+    def send(self, signum, frame=None):
+        for process in self.processes:
+            try:
+                process.send_signal(signum)
+            except OSError:
+                pass
+
+
 class InputShlexer(object):
     SHLEX_CODING = 'iso-8859-1'
 
