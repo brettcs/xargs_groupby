@@ -14,9 +14,9 @@ from argparse import Namespace
 
 import xargs_groupby as xg
 from . import mock
-from .helpers import NoopMock
+from .helpers import ExceptionWrapperTestHelper, NoopMock
 
-class ProgramTestCase(unittest.TestCase):
+class ProgramTestCase(unittest.TestCase, ExceptionWrapperTestHelper):
     def program_from_args(self, **opts):
         # args_dict should represent the default namespace returned by
         # ArgumentParser.parse_args.
@@ -67,6 +67,12 @@ class ProgramTestCase(unittest.TestCase):
     def test_input_file_encoding(self):
         self.test_input_file(arg_file='/test/file', encoding='latin-1')
 
+    def test_input_file_open_error(self):
+        program = self.program_from_args(arg_file='/test/file')
+        open_func = mock.Mock(side_effect=OSError)
+        with self.assertRaisesWrapped(OSError, xg.UserArgumentsError):
+            program.input_file(open_func)
+
     def test_input_parser(self, delimiter=None, eof_str=None):
         parsers = (mock.Mock('shlexer'), mock.Mock('splitter'))
         input_file = NoopMock(name='input_file')
@@ -99,6 +105,19 @@ class ProgramTestCase(unittest.TestCase):
         prepper_class.assert_called_with(group_func, delimiter, encoding)
         prepper_class().add.assert_called_with(input_source)
         self.assertIs(prepper, prepper_class())
+
+    def test_prep_input_io_error(self, source_error=OSError('test')):
+        program = self.program_from_args()
+        group_func = NoopMock(name='group_func')
+        input_source = NoopMock(name='input_source')
+        prepper_class = mock.Mock(name='InputPrepper')
+        prepper_class().add.side_effect = source_error
+        with self.assertRaisesWrapped(type(source_error), xg.UserArgumentsError):
+            program.prep_input(group_func, input_source, prepper_class)
+
+    def test_prep_input_decode_error(self):
+        self.test_prep_input_io_error(
+            UnicodeDecodeError(str('test'), b'foo', 1, 2, str('test error')))
 
     def test_command_template(self, group_str=None, preexec=None, command=['echo']):
         group_class = mock.Mock(name='GroupCommand')

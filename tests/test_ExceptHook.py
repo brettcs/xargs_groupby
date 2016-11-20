@@ -7,6 +7,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import errno
+import functools
 import importlib
 import io
 import itertools
@@ -32,7 +33,12 @@ class ExceptHookTestCase(unittest.TestCase):
         ValueError,
     )
     ENVIRONMENT_ERRORS = (IOError, OSError)
-    USER_ERRORS = (xg.UserArgumentsError, xg.UserExpressionError)
+    USER_ERRORS = {
+        xg.UserArgumentsError: "error in input arguments",
+        xg.UserCommandError: "error running {!r}",
+        xg.UserExpressionCompileError: "error compiling group code {!r}",
+        xg.UserExpressionRuntimeError: "group code raised an error on argument {!r}",
+    }
     ENVIRONMENT_ERRNOS = tuple(errno.errorcode)
     _locals = locals()
 
@@ -42,7 +48,8 @@ class ExceptHookTestCase(unittest.TestCase):
         excepthook.show_tb = show_tb
         return stderr, excepthook
 
-    def random_message(self):
+    @staticmethod
+    def random_message():
         # This should include a non-Latin character, to test there aren't
         # implicit conversions in Python 2.
         return "test message №{}".format(random.randint(10000, 99999))
@@ -104,13 +111,30 @@ class ExceptHookTestCase(unittest.TestCase):
             self.assertIn("`--debug`", rest_stderr)
         _locals['test_{}_error_message'.format(exc_type.__name__)] = internal_error_message_test
 
+    def user_error_message_test(self, exc_type, cause=None):
+        exc_message = self.random_message()
+        exception = exc_type(exc_message)
+        fmt_s = self.USER_ERRORS[exc_type]
+        header = fmt_s.format(exc_message)
+        expect_message = [header]
+        if fmt_s == header:
+            expect_message.append(exc_message)
+        if cause is not None:
+            exception.__cause__ = cause
+            expect_message.append(cause.args[0])
+        stderr = self.error_message_test(exception, *expect_message)
+        self.assertEqual(stderr.read(), '')
+
     for exc_type in USER_ERRORS:
-        def user_error_message_test(self, exc_type=exc_type):
-            exc_message = self.random_message()
-            exception = exc_type(exc_message)
-            stderr = self.error_message_test(exception, "error", exc_message)
-            self.assertEqual(stderr.read(), '')
-        _locals['test_{}_error_message'.format(exc_type.__name__)] = user_error_message_test
+        def user_error_message_test_no_cause(self, exc_type=exc_type):
+            self.user_error_message_test(exc_type)
+        _locals['test_{}_error_message'.format(exc_type.__name__)] = (
+            user_error_message_test_no_cause)
+        def user_error_message_test_with_cause(self, exc_type=exc_type):
+            cause = Exception(self.random_message())
+            self.user_error_message_test(exc_type, cause)
+        _locals['test_{}_error_message_with_cause'.format(exc_type.__name__)] = (
+            user_error_message_test_with_cause)
 
     def test_environment_error_without_filename(self):
         exception = self.new_environment_error(IOError)

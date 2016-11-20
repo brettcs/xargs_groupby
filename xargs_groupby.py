@@ -58,7 +58,21 @@ class UserArgumentsError(UserInputError):
     pass
 
 
+class UserCommandError(UserInputError):
+    pass
+
+
 class UserExpressionError(UserInputError):
+    def __init__(self, input_s):
+        self.input_s = input_s
+        super(UserExpressionError, self).__init__(input_s)
+
+
+class UserExpressionCompileError(UserExpressionError):
+    pass
+
+
+class UserExpressionRuntimeError(UserExpressionError):
     pass
 
 
@@ -105,10 +119,23 @@ class _ExceptHookHelper(object):
     @classmethod
     def write_message_with_prefix(cls, prefix_s):
         @cls.write_to_stderr
-        def _report_func(self, exception):
+        def _prefix_report_func(self, exception):
             yield prefix_s
             yield cls.exception_message(exception)
-        return _report_func
+            cause = getattr(exception, '__cause__', None)
+            if cause:
+                yield cls.exception_message(exception.__cause__)
+        return _prefix_report_func
+
+    @classmethod
+    def write_message_with_format(cls, fmt_s):
+        @cls.write_to_stderr
+        def _format_report_func(self, exception):
+            yield fmt_s.format(cls.exception_message(exception))
+            cause = getattr(exception, '__cause__', None)
+            if cause:
+                yield cls.exception_message(exception.__cause__)
+        return _format_report_func
 
 
 class ExceptHook(object):
@@ -131,6 +158,14 @@ class ExceptHook(object):
 
     _report_UserInputError = _ExceptHookHelper.write_message_with_prefix("error")
     _report_MemoryError = _report_UserInputError
+    _report_UserArgumentsError = _ExceptHookHelper.write_message_with_prefix(
+        "error in input arguments")
+    _report_UserCommandError = _ExceptHookHelper.write_message_with_format(
+        "error running {!r}")
+    _report_UserExpressionCompileError = _ExceptHookHelper.write_message_with_format(
+        "error compiling group code {!r}")
+    _report_UserExpressionRuntimeError = _ExceptHookHelper.write_message_with_format(
+        "group code raised an error on argument {!r}")
 
     @_ExceptHookHelper.write_to_stderr
     def _report_internal_error(self, exception):
@@ -455,10 +490,10 @@ class UserExpression(object):
     del _builtins, _builtins_modname, _builtins_module, _builtins_whitelist
 
     def __init__(self, expr_s):
-        try:
+        exception_wrapper = functools.partial(ExceptionWrapper,
+                                              UserExpressionCompileError(expr_s))
+        with exception_wrapper(SyntaxError):
             parsed_ast = ast.parse(expr_s, self.SOURCE, 'eval')
-        except SyntaxError as error:
-            raise UserExpressionError(*error.args)
         name_checker = NameChecker(self._EVAL_VARS)
         _, unloaded_names = name_checker.check(parsed_ast)
         unknown_names = set()
@@ -469,11 +504,12 @@ class UserExpression(object):
                 unknown_names.add(name)
         unknown_names_count = len(unknown_names)
         if unknown_names_count > 1:
-            raise UserExpressionError("names {} are not defined".format(
-                ", ".join(repr(name) for name in unknown_names)))
+            with exception_wrapper(NameError):
+                raise NameError("names {} are not defined".format(
+                    ", ".join(repr(name) for name in unknown_names)))
         elif unknown_names_count == 1:
             unknown_name = unknown_names.pop()
-            name_error = UserExpressionError("name {!r} is not defined".format(unknown_name))
+            name_error = NameError("name {!r} is not defined".format(unknown_name))
             # If the name refers to a module that isn't in _EVAL_VARS,
             # always treat it as an error, rather than overloading the name.
             try:
@@ -483,7 +519,8 @@ class UserExpression(object):
             else:
                 if module_file is not None:
                     module_file.close()
-                raise name_error
+                with exception_wrapper(NameError):
+                    raise name_error
             # Ensure the unknown name is the argument of a callable.
             # If this expression isn't callable, wrap it in a lambda.
             try:
@@ -493,22 +530,23 @@ class UserExpression(object):
                     'lambda {}: {}'.format(unknown_name, expr_s),
                     self.SOURCE, 'eval')
             except IndexError:
-                raise UserExpressionError("callable expression accepts no argument")
+                with exception_wrapper(ValueError):
+                    raise ValueError("callable expression accepts no argument")
             else:
                 try:
                     arg_name = arg_node.arg
                 except AttributeError:
                     arg_name = arg_node.id
                 if unknown_name != arg_name:
-                    raise name_error
+                    with exception_wrapper(NameError):
+                        raise name_error
         expr_code = compile(parsed_ast, self.SOURCE, 'eval')
-        try:
+        with exception_wrapper(AttributeError):
             self.func = eval(expr_code, self._EVAL_VARS)
-        except AttributeError as error:
-            raise UserExpressionError(*error.args)
         if not callable(self.func):
-            raise UserExpressionError("{!r} expression is not callable".
-                             format(type(self.func)))
+            with exception_wrapper(ValueError):
+                raise ValueError("{!r} expression is not callable".
+                                 format(type(self.func)))
 
     def __call__(self, arg):
         with warnings.catch_warnings():
@@ -516,7 +554,8 @@ class UserExpression(object):
                 warnings.filterwarnings('ignore', category=ResourceWarning)
             except NameError:
                 pass
-            return self.func(arg)
+            with ExceptionWrapper(UserExpressionRuntimeError(arg), Exception):
+                return self.func(arg)
 
     _build_whitelisted_module = staticmethod(_build_whitelisted_module)
     _check_open_mode = staticmethod(_check_open_mode)
@@ -535,7 +574,7 @@ class InputPrepper(object):
         def exclude(self, bytes_arg):
             self.eligible.difference_update(bytes_arg)
             if not self.eligible:
-                raise UserArgumentsError("group arguments use all bytes - no possible delimiter")
+                raise UserArgumentsError("input arguments span all bytes - no delimiter available")
 
         def delimiter(self):
             return next(iter(self.eligible))
@@ -567,6 +606,13 @@ class InputPrepper(object):
     def add(self, arg_seq):
         for arg in arg_seq:
             key = self.group_func(arg)
+            # I *believe* it is impossible for a UnicodeEncodeError to occur
+            # here, as long as we continue to use the same encoding to both
+            # read input and write to xargs.  Since we read arg in *from* this
+            # encoding, it must be possible to write it back out in the same
+            # encoding.
+            # If I'm mistaken or an assumption changes, this might be a good
+            # place to wrap UnicodeEncodeError for better error reporting.
             arg_bytes = arg.encode(self.encoding)
             self[key].append(arg_bytes)
             if self._delimiter is None:
@@ -654,7 +700,8 @@ class ProcessWriter(object):
     Popen = subprocess.Popen
 
     def __init__(self, cmd, input_seq, sep_byte):
-        self.proc = self.Popen(cmd, stdin=subprocess.PIPE)
+        with ExceptionWrapper(UserCommandError(cmd[0]), EnvironmentError):
+            self.proc = self.Popen(cmd, stdin=subprocess.PIPE)
         self.input_seq = iter(input_seq)
         self.sep_byte = sep_byte
         self.returncode = None
@@ -987,7 +1034,8 @@ class Program(object):
 
     def input_file(self, open_func=io.open):
         source = sys.stdin.fileno() if (self.args.arg_file is None) else self.args.arg_file
-        return open_func(source, encoding=self.args.encoding)
+        with ExceptionWrapper(UserArgumentsError, EnvironmentError):
+            return open_func(source, encoding=self.args.encoding)
 
     def input_parser(self, input_file, shlexer=InputShlexer, splitter=InputSplitter):
         if self.args.delimiter is None:
@@ -997,7 +1045,8 @@ class Program(object):
 
     def prep_input(self, group_func, input_seq, new_prepper=InputPrepper):
         prepper = new_prepper(group_func, self.args.delimiter, self.args.encoding)
-        prepper.add(input_seq)
+        with ExceptionWrapper(UserArgumentsError, EnvironmentError, UnicodeDecodeError):
+            prepper.add(input_seq)
         return prepper
 
     def command_templates(self, group_cmd=GroupCommand, xargs_cmd=XargsCommand):

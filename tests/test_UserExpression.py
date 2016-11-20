@@ -17,6 +17,7 @@ import zipfile
 
 import xargs_groupby as xg
 from . import mock, FOREIGN_ENCODING
+from .helpers import ExceptionWrapperTestHelper
 
 NONEXISTENT_PATH = os.path.join(__file__, '/_nonexistent/path')
 
@@ -25,7 +26,7 @@ def walk_attrs(obj, attr_seq):
         obj = getattr(obj, attr_name)
     return obj
 
-class UserExpressionTestCase(unittest.TestCase):
+class UserExpressionTestCase(unittest.TestCase, ExceptionWrapperTestHelper):
     def test_simple_callable(self):
         expr = xg.UserExpression('lambda s: s.upper()')
         self.assertEqual(expr('test'), 'TEST')
@@ -50,14 +51,6 @@ class UserExpressionTestCase(unittest.TestCase):
         expr = xg.UserExpression('anything * 3')
         self.assertEqual(expr('t'), 'ttt')
 
-    def test_arbitrary_shortcut_fails_inside_lambda(self):
-        with self.assertRaises(xg.UserExpressionError):
-            xg.UserExpression('lambda _: anything')
-
-    def test_two_arbitrary_names_fail(self):
-        with self.assertRaises(xg.UserExpressionError):
-            xg.UserExpression('_ * anything')
-
     def test_builtin_usable(self):
         expr = xg.UserExpression('int')
         self.assertEqual(expr('019'), 19)
@@ -66,51 +59,60 @@ class UserExpressionTestCase(unittest.TestCase):
         expr = xg.UserExpression('os.path.basename')
         self.assertEqual(expr(os.path.join('dir', 'test')), 'test')
 
-    def test_syntax_error(self, expr_s='lambda s:'):
-        with self.assertRaises(xg.UserExpressionError):
+    def test_syntax_error(self, expr_s='lambda s:', wrapped_class=SyntaxError, *wrapper_args):
+        with self.assertRaisesWrapped(wrapped_class,
+                                      xg.UserExpressionCompileError, *wrapper_args):
             xg.UserExpression(expr_s)
 
+    def test_arbitrary_shortcut_fails_inside_lambda(self):
+        expr_s = 'lambda _: anything'
+        self.test_syntax_error(expr_s, NameError, expr_s)
+
+    def test_two_arbitrary_names_fail(self):
+        expr_s = '_ * anything'
+        self.test_syntax_error(expr_s, NameError, expr_s)
+
     def test_not_callable(self):
-        self.test_syntax_error('"test"')
+        self.test_syntax_error('"test"', ValueError)
 
     def test_not_expression(self):
-        self.test_syntax_error('f = float')
+        self.test_syntax_error('f = float', SyntaxError)
 
     # This would be a nice feature to have, but it seems impossible to
     # correctly introspect the arguments of built-in types.
     # For example, try `inspect.getcallargs(int, 42)`.
     @unittest.skip("arity checking seems unreliable")
     def test_wrong_arity_zero(self):
-        self.test_syntax_error('lambda: 5')
+        self.test_syntax_error('lambda: 5', ValueError)
 
     @unittest.skip("arity checking seems unreliable")
     def test_wrong_arity_two(self):
-        self.test_syntax_error('lambda a, b: a')
+        self.test_syntax_error('lambda a, b: a', ValueError)
 
     def test_os_not_usable(self):
-        self.test_syntax_error('os.abort')
+        self.test_syntax_error('os.abort', AttributeError)
 
     def test_other_imported_module_not_usable(self):
-        self.test_syntax_error('warnings.resetwarnings')
+        self.test_syntax_error('warnings.resetwarnings', NameError)
 
     def test_unimported_module_not_usable(self):
-        self.test_syntax_error('pickle.dumps')
+        self.test_syntax_error('pickle.dumps', NameError)
 
     def test_exit_not_usable(self):
-        self.test_syntax_error('exit(_)')
+        self.test_syntax_error('exit(_)', NameError)
 
     def test_file_not_usable(self):
-        self.test_syntax_error('file(_)')
+        self.test_syntax_error('file(_)', NameError)
 
     def test_xg_contents_not_usable(self):
         for name in ['NameChecker', 'UserExpression', 'name']:
             expr_s = '{}(_)'.format(name)
             try:
                 xg.UserExpression(expr_s)
-            except xg.UserExpressionError:
-                pass
+            except xg.UserExpressionCompileError as exception:
+                self.assertIsInstance(exception.__cause__, NameError)
             else:
-                self.fail("expression {!r} did not raise xg.UserExpressionError".
+                self.fail("expression {!r} did not raise xg.UserExpressionCompileError".
                           format(expr_s))
 
     def empty_tar_expr(self, append=''):
@@ -121,8 +123,9 @@ class UserExpressionTestCase(unittest.TestCase):
 
     def test_tarfile_not_addable(self, method_name='add'):
         expr = xg.UserExpression(self.empty_tar_expr('.{}(_)'.format(method_name)))
-        with self.assertRaises(AttributeError):
-            expr('.')
+        arg = '.'
+        with self.assertRaisesWrapped(AttributeError, xg.UserExpressionRuntimeError, arg):
+            expr(arg)
 
     def test_tarfile_not_extractable(self):
         self.test_tarfile_not_addable('extractall')
@@ -135,8 +138,9 @@ class UserExpressionTestCase(unittest.TestCase):
 
     def test_zipfile_not_addable(self, class_name='zipfile.ZipFile', method_name='write'):
         expr = xg.UserExpression(self.empty_zip_expr(class_name, '.{}(_)'.format(method_name)))
-        with self.assertRaises(AttributeError):
-            expr('.')
+        arg = '.'
+        with self.assertRaisesWrapped(AttributeError, xg.UserExpressionRuntimeError, arg):
+            expr(arg)
 
     def test_zipfile_not_extractable(self):
         self.test_zipfile_not_addable(method_name='extractall')
@@ -160,10 +164,7 @@ def IOWrapperTests(expr_func_name, bad_modes,
         src_module = importlib.import_module(next(name_parts))
         src_func = walk_attrs(src_module, name_parts)
 
-    class IOWrapperTestCase(unittest.TestCase):
-        if not hasattr(unittest.TestCase, 'assertRaisesRegex'):
-            assertRaisesRegex = unittest.TestCase.assertRaisesRegexp
-
+    class IOWrapperTestCase(unittest.TestCase, ExceptionWrapperTestHelper):
         def test_function_wrapped(self):
             expr = xg.UserExpression(expr_func_name)
             name_parts = iter(expr_func_name.split('.'))
@@ -176,8 +177,12 @@ def IOWrapperTests(expr_func_name, bad_modes,
         for bad_mode in bad_modes:
             def test_bad_mode_fails(self, mode=bad_mode):
                 expr = xg.UserExpression(call_fmt.format(expr_func_name, mode))
-                with self.assertRaisesRegex(ValueError, r'^invalid mode: '):
+                with self.assertRaisesWrapped(
+                        ValueError,
+                        xg.UserExpressionRuntimeError, NONEXISTENT_PATH) as exc_check:
                     expr(NONEXISTENT_PATH)
+                orig_error_s = exc_check.exception.__cause__.args[0]
+                self.assertTrue(orig_error_s.startswith('invalid mode: '))
             _locals['test_mode_{}_fails'.format(bad_mode)] = test_bad_mode_fails
         del test_bad_mode_fails
     IOWrapperTestCase.__name__ = str('{}WrapperTestCase'.format(re.sub(

@@ -10,9 +10,10 @@ import unittest
 
 import xargs_groupby as xg
 from . import mock
+from .helpers import ExceptionWrapperTestHelper
 from .mocks import FakePipe, FakePopen
 
-class ProcessWriterTestCase(unittest.TestCase):
+class ProcessWriterTestCase(unittest.TestCase, ExceptionWrapperTestHelper):
     SEPARATOR = b'\0'[0]
 
     def setUp(self):
@@ -99,3 +100,9 @@ class ProcessWriterTestCase(unittest.TestCase):
             proc.write(2)
             self.assertEqual(proc.poll(), 0)
             self.assertFalse(proc.success())
+
+    def test_command_not_found_wrapped(self):
+        xg.ProcessWriter.Popen = mock.Mock(side_effect=OSError)
+        with self.assertRaisesWrapped(OSError, xg.UserCommandError, 'echo'):
+            xg.ProcessWriter(['echo', 'hello world'], [], self.SEPARATOR)
+
