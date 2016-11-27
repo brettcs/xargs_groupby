@@ -215,6 +215,22 @@ class ExceptionWrapper(object):
             raise new_exception
 
 
+class SignalHandlers(object):
+    def __init__(self):
+        self.handler_functions = []
+
+    def add(self, handler_func):
+        self.handler_functions.append(handler_func)
+
+    def handle(self, signum, frame):
+        for handler_func in self.handler_functions:
+            handler_func(signum, frame)
+
+    @staticmethod
+    def exit(signum, frame, exit_func=exit):
+        exit_func(-signum)
+
+
 class SignalBroadcaster(object):
     def __init__(self):
         self.processes = set()
