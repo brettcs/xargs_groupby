@@ -19,10 +19,11 @@ from . import mock
 from .helpers import NoopMock
 
 class FakePopen(object):
-    def __init__(self, error=None):
+    def __init__(self, signal_error=None, returncode=0):
         self.send_signal = mock.Mock(name='FakePopen.send_signal')
-        if error is not None:
-            self.send_signal.side_effect = error
+        if signal_error is not None:
+            self.send_signal.side_effect = signal_error
+        self.wait = mock.Mock(name='FakePopen.wait', return_value=returncode)
 
 
 class SignalBroadcasterTestCase(unittest.TestCase):
@@ -51,7 +52,7 @@ class SignalBroadcasterTestCase(unittest.TestCase):
         self.processes.append(new_proc)
         self.broadcaster.add(new_proc)
 
-    def run_and_check(self, signum=None):
+    def send_and_check(self, signum=None):
         if signum is None:
             signum = random.randint(1, 16)
         frame = NoopMock(name='frame')
@@ -66,7 +67,7 @@ class SignalBroadcasterTestCase(unittest.TestCase):
             def test_procs(self, error_list=error_list):
                 for error in error_list:
                     self.add_process(error)
-                self.run_and_check()
+                self.send_and_check()
             _locals['_'.join(name_iter(['processes'], error_list))] = test_procs
     del test_procs
 
@@ -78,7 +79,7 @@ class SignalBroadcasterTestCase(unittest.TestCase):
             rm_proc = self.processes.pop()
             self.broadcaster.remove(rm_proc)
             removed_procs.append(rm_proc)
-        self.run_and_check()
+        self.send_and_check()
         for process in removed_procs:
             process.send_signal.assert_not_called()
 
@@ -90,3 +91,14 @@ class SignalBroadcasterTestCase(unittest.TestCase):
 
     def test_no_signal_all_procs_removed(self):
         self.test_no_signal_removed_proc(self.ERRORS_LIST, len(self.ERRORS_LIST))
+
+    def test_wait(self):
+        self.add_process()
+        self.add_process()
+        error = self._make_error(errno.ECHILD)
+        side_effect = [0, 1, error, error]
+        waitpid = mock.Mock(name='os.waitpid', side_effect=side_effect)
+        self.broadcaster.wait(1, NoopMock(name='frame'), waitpid)
+        waitpid.assert_has_calls([mock.call(-1, 0)] * 3)
+
+    _make_error = staticmethod(_make_error)

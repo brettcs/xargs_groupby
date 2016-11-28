@@ -25,6 +25,7 @@ import argparse
 import ast
 import collections
 import contextlib
+import errno
 import functools
 import imp
 import importlib
@@ -247,6 +248,17 @@ class SignalBroadcaster(object):
                 process.send_signal(signum)
             except OSError:
                 pass
+
+    def wait(self, signum=None, frame=None, waitpid=os.waitpid):
+        # We can't use Popen.wait() here, because that locks, and the lock
+        # might be held by an interrupted frame.
+        while True:
+            try:
+                waitpid(-1, 0)
+            except OSError as error:
+                if error.errno == errno.ECHILD:
+                    break
+                raise
 
 
 class InputShlexer(object):
