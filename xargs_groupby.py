@@ -759,10 +759,18 @@ class XargsCommand(object):
 
 class ProcessWriter(object):
     Popen = subprocess.Popen
+    process_registry = set()
+
+    @staticmethod
+    @contextlib.contextmanager
+    def sync_process():
+        yield
 
     def __init__(self, cmd, input_seq, sep_byte):
-        with ExceptionWrapper(UserCommandError(cmd[0]), EnvironmentError):
+        with self.sync_process(), \
+             ExceptionWrapper(UserCommandError(cmd[0]), EnvironmentError):
             self.proc = self.Popen(cmd, stdin=subprocess.PIPE)
+            self.process_registry.add(self.proc)
         self.input_seq = iter(input_seq)
         self.sep_byte = sep_byte
         self.returncode = None
@@ -802,7 +810,11 @@ class ProcessWriter(object):
         return self.proc.stdin.closed
 
     def poll(self):
-        self.returncode = self.proc.poll()
+        prev_returncode = self.returncode
+        with self.sync_process():
+            self.returncode = self.proc.poll()
+            if prev_returncode != self.returncode:
+                self.process_registry.remove(self.proc)
         return self.returncode
 
     def success(self):
