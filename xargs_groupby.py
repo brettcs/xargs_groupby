@@ -222,13 +222,31 @@ class ExceptionWrapper(object):
 class SignalHandlers(object):
     def __init__(self):
         self.handler_functions = []
+        self.signal_queue = collections.deque()
+        self.defers = 0
 
     def add(self, handler_func):
         self.handler_functions.append(handler_func)
 
+    def _process_queue(self):
+        self.defers += 1
+        if self.defers == 1:
+            while self.signal_queue:
+                signum, frame = self.signal_queue.popleft()
+                for handler_func in self.handler_functions:
+                    handler_func(signum, frame)
+        self.defers -= 1
+
+    @contextlib.contextmanager
+    def defer_handling(self):
+        self.defers += 1
+        yield self
+        self.defers -= 1
+        self._process_queue()
+
     def handle(self, signum, frame):
-        for handler_func in self.handler_functions:
-            handler_func(signum, frame)
+        self.signal_queue.append((signum, frame))
+        self._process_queue()
 
     @staticmethod
     def exit(signum, frame, _signal=signal.signal, _kill=os.kill):

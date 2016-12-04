@@ -48,6 +48,23 @@ class SignalHandlersTestCase(unittest.TestCase):
         handler.handle(2, NoopMock(name='frame'))
         self.assertEqual(call_order, func_count)
 
+    def test_defer_handling(self):
+        handler_func = mock.Mock(name='sig_handler')
+        handler = xg.SignalHandlers()
+        handler.add(handler_func)
+        with handler.defer_handling():
+            handler.handle(1, NoopMock(name='frame'))
+            handler_func.assert_not_called()
+
+    def test_handling_after_done_deferring(self):
+        handler_func = mock.Mock(name='sig_handler')
+        handler = xg.SignalHandlers()
+        handler.add(handler_func)
+        frame = NoopMock(name='frame')
+        with handler.defer_handling():
+            handler.handle(2, frame)
+        handler_func.assert_called_with(2, frame)
+
 
 class SignalHandlersExitTestCase(unittest.TestCase):
     _locals = locals()
