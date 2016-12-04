@@ -162,9 +162,12 @@ class ExceptHook(object):
         return self._find_handler(exc_root, header_dict.__getitem__, (KeyError,),
                                   "internal " + exc_root.__name__)
 
+    def on_interrupt(self, exception):
+        exit(127)
+
     def __call__(self, exc_type, exc_value, exc_tb):
         if issubclass(exc_type, KeyboardInterrupt):
-            exit(-signal.SIGINT)
+            return self.on_interrupt(exc_value)
         self.stderr.write("xargs_groupby")
         header = self._find_header_from(self.HEADERS, exc_type)
         if header:
@@ -228,8 +231,9 @@ class SignalHandlers(object):
             handler_func(signum, frame)
 
     @staticmethod
-    def exit(signum, frame, exit_func=exit):
-        exit_func(-signum)
+    def exit(signum, frame, _signal=signal.signal, _kill=os.kill):
+        _signal(signum, signal.SIG_DFL)
+        _kill(os.getpid(), signum)
 
 
 class SignalBroadcaster(object):

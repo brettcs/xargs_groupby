@@ -6,6 +6,8 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+import os
+import signal
 import unittest
 
 import xargs_groupby as xg
@@ -49,10 +51,13 @@ class SignalHandlersTestCase(unittest.TestCase):
 
 class SignalHandlersExitTestCase(unittest.TestCase):
     _locals = locals()
+    own_pid = os.getpid()
     for signum in range(1, 16):
-        def test_exit(self, signum=signum):
-            exit_mock = mock.Mock(name='sys.exit')
-            xg.SignalHandlers.exit(signum, NoopMock(name='frame'), exit_mock)
-            exit_mock.assert_called_with(-signum)
+        def test_exit(self, signum=signum, pid=own_pid):
+            signal_mock = mock.Mock(name='signal.signal')
+            kill_mock = mock.Mock(name='os.kill')
+            xg.SignalHandlers.exit(signum, NoopMock(name='frame'), signal_mock, kill_mock)
+            signal_mock.assert_called_with(signum, signal.SIG_DFL)
+            kill_mock.assert_called_with(pid, signum)
         _locals['test_exit_on_signal_{}'.format(signum)] = test_exit
     del test_exit

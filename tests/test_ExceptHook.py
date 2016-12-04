@@ -19,7 +19,7 @@ import sys
 import unittest
 
 import xargs_groupby as xg
-from . import FOREIGN_ENCODING
+from . import mock, FOREIGN_ENCODING
 from .helpers import ExitTestHelper
 
 importlib.import_module(Exception.__module__)
@@ -41,12 +41,14 @@ class ExceptHookTestCase(unittest.TestCase, ExitTestHelper):
         xg.UserExpressionRuntimeError: "group code raised an error on argument {!r}",
     }
     ENVIRONMENT_ERRNOS = tuple(errno.errorcode)
+    SIGINT_EXIT_CODE = 128 + signal.SIGINT
     _locals = locals()
 
     def new_excepthook(self, show_tb=False):
         stderr = io.StringIO()
         excepthook = xg.ExceptHook(stderr=stderr)
         excepthook.show_tb = show_tb
+        excepthook.on_interrupt = mock.Mock(name='on_interrupt')
         return stderr, excepthook
 
     @staticmethod
@@ -68,13 +70,17 @@ class ExceptHookTestCase(unittest.TestCase, ExitTestHelper):
         else:
             return exc_type(self.random_message())
 
-    def assertExitFrom(self, exception, excepthook, *exit_codes):
+    @staticmethod
+    def exc_3tuple(exception):
         try:
             raise exception
         except BaseException:
-            exc_tb = sys.exc_info()[2]
+            return sys.exc_info()
+
+    def assertExitFrom(self, exception, excepthook, *exit_codes):
+        exc_type, _, exc_tb = self.exc_3tuple(exception)
         with self.assertExits(*exit_codes) as exc_check:
-            excepthook(type(exception), exception, exc_tb)
+            excepthook(exc_type, exception, exc_tb)
         return exc_check
 
     def assertErrorHeadline(self, stderr, *message_parts):
@@ -82,7 +88,7 @@ class ExceptHookTestCase(unittest.TestCase, ExitTestHelper):
         stderr.seek(0)
         self.assertEqual(stderr.read(len(expect_message)), expect_message)
 
-    expected_exitcodes = {MemoryError: 1, KeyboardInterrupt: -signal.SIGINT}
+    expected_exitcodes = {MemoryError: 1}
     expected_exitcodes.update({exc_type: 1 for exc_type in INTERNAL_ERRORS})
     expected_exitcodes.update({exc_type: 1 for exc_type in ENVIRONMENT_ERRORS})
     expected_exitcodes.update({exc_type: 3 for exc_type in USER_ERRORS})
@@ -173,10 +179,17 @@ class ExceptHookTestCase(unittest.TestCase, ExitTestHelper):
         exception.__cause__ = self.new_environment_error(OSError, None, None, filename)
         self.check_environment_error_report(exception, header, wrapper_msg, filename)
 
+    def test_keyboard_interrupt_callback(self):
+        _, excepthook = self.new_excepthook(show_tb=False)
+        exception = KeyboardInterrupt("callback test")
+        exc_info = self.exc_3tuple(exception)
+        excepthook(*exc_info)
+        excepthook.on_interrupt.assert_called_with(exception)
+
     def test_keyboard_interrupt_no_message(self):
         stderr, excepthook = self.new_excepthook(show_tb=True)
-        self.assertExitFrom(KeyboardInterrupt("no message test"), excepthook,
-                            -signal.SIGINT)
+        exc_info = self.exc_3tuple(KeyboardInterrupt("no message test"))
+        excepthook(*exc_info)
         self.assertEqual(stderr.tell(), 0)
 
     for exc_type in itertools.chain(INTERNAL_ERRORS, ENVIRONMENT_ERRORS, USER_ERRORS):
